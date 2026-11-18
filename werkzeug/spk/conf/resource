@@ -1,0 +1,35 @@
+{
+    "webservice": {
+        "services": [
+            {
+                "service": "ringtagebuch",
+                "display_name": "Ringtagebuch",
+                "support_alias": true,
+                "support_server": true,
+                "type": "static",
+                "root": "ringtagebuch",
+                "index": [
+                    "index.html"
+                ]
+            }
+        ],
+        "portals": [
+            {
+                "service": "ringtagebuch",
+                "name": "ringtagebuch",
+                "display_name": "Ringtagebuch",
+                "type": "alias",
+                "alias": "ringtagebuch"
+            }
+        ],
+        "pkg_dir_prepare": [
+            {
+                "source": "/var/packages/ringtagebuch/target/src",
+                "target": "ringtagebuch",
+                "mode": "0755",
+                "user": "ringtagebuch",
+                "group": "http"
+            }
+        ]
+    }
+}

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Ringtagebuch speichert keine Daten auf der DiskStation (alles bleibt auf dem Handy),
+# daher ist hier nichts zu sichern oder aufzuräumen. Web Station richtet Dienst und Adresse selbst ein.
+exit 0

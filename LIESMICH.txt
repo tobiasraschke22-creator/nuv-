@@ -1,0 +1,50 @@
+RINGTAGEBUCH – Installation auf der Synology DiskStation
+=========================================================
+
+Was die App kann
+- Ab dem Tag, an dem der Ring eingesetzt wird, täglich festhalten:
+  Schmerzen (Stärke und Ort), Krämpfe, Durchfall, Blutung, Essen (was, wie
+  viel, wann, Freitext), Laune (−5 bis +5), Angst, Wut, Stress, Freitext,
+  Schlaf, Energie und Schmerzmittel.
+- Ring durchgehend oder mit Pause, Hinweis am Wechseltag, Kalender-
+  Erinnerungen (Ringwechsel 2× am Tag, Tagebuch täglich um 20:30 Uhr).
+- Auswertung: Zusammenhänge zwischen Essen, Emotionen, Schlaf und
+  Symptomen, Verläufe, Vergleich nach Ring-Woche und Ring, Bericht für die
+  Ärztin zum Teilen.
+- Alle Gesundheitsdaten bleiben auf dem Handy. Auf der DiskStation liegt
+  nur die App selbst.
+
+Installieren
+1. Paket-Zentrum öffnen → oben rechts „Manuell installieren“.
+2. Die Datei ringtagebuch-<Version>.spk aus dem Ordner „ausgabe“ wählen.
+3. Den Hinweis zu Drittanbieter-Paketen bestätigen. Web Station wird bei
+   Bedarf mitinstalliert.
+4. Fertig. Die App ist erreichbar unter
+      http://IP-der-DiskStation/ringtagebuch/
+
+Aufs iPhone
+1. Die Adresse in Safari öffnen.
+2. Teilen → „Zum Home-Bildschirm“.
+   Erst dann bleiben die Daten dauerhaft gespeichert.
+3. Wichtig: Immer dieselbe Adresse verwenden. Die Daten gehören zur
+   Adresse – unter einer anderen Adresse (z. B. andere IP oder Name) ist
+   das Tagebuch leer. Zum Umziehen: „Mehr“ → „Backup erstellen“, unter der
+   neuen Adresse „Backup laden“.
+
+HTTPS (empfohlen)
+Ohne HTTPS funktionieren Offline-Nutzung und das Teilen-Menü (Backup,
+Bericht, Kalender) auf dem iPhone nicht zuverlässig.
+- Systemsteuerung → Externer Zugriff → DDNS: z. B. name.synology.me
+- Systemsteuerung → Sicherheit → Zertifikat: Let's Encrypt für diese Adresse
+- Dann https://name.synology.me/ringtagebuch/ verwenden.
+Wer die App nur zu Hause oder per VPN nutzt, gibt sie damit nicht ins
+offene Internet.
+
+Update
+Neue .spk-Datei genauso über „Manuell installieren“ einspielen. Die Daten
+auf dem Handy bleiben erhalten, die App lädt die neue Version beim
+nächsten Öffnen.
+
+Deinstallieren
+Paket-Zentrum → Ringtagebuch → Deinstallieren. Die Daten auf dem Handy
+werden dadurch nicht gelöscht.

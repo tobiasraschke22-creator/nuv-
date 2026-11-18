@@ -5,7 +5,7 @@ Offline-fähige Web-App (PWA) ohne Build-Schritt. Alle Daten bleiben im Browser 
 - Tägliches Assessment ab dem ersten Ring-Tag:
   - Endometriose-Symptome: Schmerzen mit Ort, Krämpfe, Durchfall, Blutung
   - Essenstagebuch: Mahlzeiten mit Uhrzeit und Menge, Freitext
-  - Emotionen: Angst, Wut, Stress, Freitext
+  - Emotionen: Laune (−5 bis +5), Angst, Wut, Stress, Freitext
   - Körper: Schlaf, Energie, Schmerzmittel
 - Ring-Rhythmus durchgehend oder mit Pause, Tagebuch-Tag-Zähler, Wechsel-Hinweise
 - Kalender-Erinnerungen (.ics): Ringwechsel 2× am Tag, tägliche Tagebuch-Erinnerung
@@ -13,15 +13,18 @@ Offline-fähige Web-App (PWA) ohne Build-Schritt. Alle Daten bleiben im Browser 
   Emotionen, Schlaf und Symptomen, Verläufe, Vergleich nach Ring-Woche und Ring
 - Bericht als Datei teilen (für die Ärztin), Drucken, CSV, Backup
 
-Starten lokal: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen.
-Veröffentlichung: Die Dateien sind statisch und lassen sich bei jedem HTTPS-Hoster ablegen (z. B. Netlify, Cloudflare Pages).
+Lokal starten: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen.
 
-## Installation auf der Synology
+## Synology-Paket
 
 ```sh
-sh deploy/install.sh                                   # direkt auf der NAS
-sh deploy/install.sh benutzer@nas-ip:/volume1/web/ringtagebuch   # vom Computer aus
+# 1. Versionsnummer in VERSION erhöhen (z. B. 1.0.0 → 1.1.0)
+sh werkzeug/paket.sh     # baut ausgabe/ringtagebuch-<v>.spk und prüft es
 ```
 
-Danach den Ordner in Web Station als Webportal freigeben, oder `deploy/docker-compose.yml`
-im Container Manager starten (Port 8080). Für die iPhone-Installation wird HTTPS benötigt.
+Installation: Paket-Zentrum → „Manuell installieren“ → `.spk` wählen. Danach unter
+`http://IP-der-DiskStation/ringtagebuch/` erreichbar. Ausführlich: `LIESMICH.txt`.
+
+Aufbau wie beim NununuMe-Paket (`werkzeug/spk/`), aber ohne PHP und ohne Hintergrund-Dienst:
+Web Station liefert die Dateien statisch aus, Gesundheitsdaten liegen nie auf der DiskStation.
+Benötigt: Python 3 mit Pillow, Node.js.

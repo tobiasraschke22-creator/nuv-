@@ -1,5 +1,6 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
+const APP_VERSION = '1.0.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
 const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
@@ -61,7 +62,7 @@ const isBleed = e => ['light', 'medium', 'heavy'].includes(e.bleeding);
 const isSpot = e => e.bleeding === 'spotting';
 const filled = s => !!(s || '').trim();
 const hasMeals = e => (e.meals || []).some(m => filled(m.text));
-const hasData = e => !!e && (['pain', 'cramps', 'diarrhea', 'anxiety', 'anger', 'stress', 'sleep', 'energy'].some(k => e[k] != null) ||
+const hasData = e => !!e && (['pain', 'cramps', 'diarrhea', 'mood', 'anxiety', 'anger', 'stress', 'sleep', 'energy'].some(k => e[k] != null) ||
   !!e.bleeding || filled(e.note) || filled(e.foodNote) || filled(e.medsNote) || hasMeals(e) ||
   (e.painAreas || []).length > 0 || (e.meds || []).length > 0);
 
@@ -103,9 +104,10 @@ function onboardingHTML() {
   <p class="notice">Alle Daten bleiben auf diesem Gerät und werden nirgends hochgeladen.</p>`;
 }
 
+const signed = i => i > 0 ? '+' + i : String(i).replace('-', '−');
 function scaleHTML(key, min, max, val, labels, title) {
-  let h = `<div class="scale" role="group" aria-label="${esc(title)}" style="grid-template-columns:repeat(${max - min + 1},1fr)">`;
-  for (let i = min; i <= max; i++) h += `<button data-action="scale" data-k="${key}" data-v="${i}" class="${val === i ? 'on' : ''}" aria-pressed="${val === i}">${i}</button>`;
+  let h = `<div class="scale${min < 0 ? ' signed' : ''}" role="group" aria-label="${esc(title)}" style="grid-template-columns:repeat(${max - min + 1},minmax(0,1fr))">`;
+  for (let i = min; i <= max; i++) h += `<button data-action="scale" data-k="${key}" data-v="${i}" class="${val === i ? 'on' : ''}" aria-pressed="${val === i}">${min < 0 ? signed(i) : i}</button>`;
   h += '</div>';
   if (labels) h += `<div class="scale-lbl"><span>${labels[0]}</span><span>${labels[1]}</span></div>`;
   return h;
@@ -176,6 +178,7 @@ function todayHTML() {
   </div>
 
   <div class="card"><h2 style="margin-top:0">Emotionen</h2>
+    <h3>Laune</h3>${scaleHTML('mood', -5, 5, e.mood, ['sehr schlecht', 'sehr gut'], 'Laune von −5 bis +5')}
     <h3>Angst</h3>${scaleHTML('anxiety', 0, 5, e.anxiety, ['keine', 'sehr stark'], 'Angst')}
     <h3>Wut</h3>${scaleHTML('anger', 0, 5, e.anger, ['keine', 'sehr stark'], 'Wut')}
     <h3>Stress</h3>${scaleHTML('stress', 0, 5, e.stress, ['keiner', 'sehr stark'], 'Stress')}
@@ -218,7 +221,8 @@ function historyHTML() {
 
 // ---------- Auswertung ----------
 const avg = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
-const f1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',');
+const f1 = x => x == null ? '–' : x.toFixed(1).replace('.', ',').replace('-', '−');
+const fs = x => x == null ? '–' : (x > 0.05 ? '+' : '') + f1(x);
 const pct = (n, d) => d ? Math.round(n / d * 100) + ' %' : '–';
 
 function loggedDays() {
@@ -237,6 +241,7 @@ function groupStats(rows) {
     bleed: rows.filter(r => isBleed(r.e)).length,
     spot: rows.filter(r => isSpot(r.e)).length,
     stress: avg(rows.map(r => r.e.stress)),
+    mood: avg(rows.map(r => r.e.mood)),
     meds: rows.filter(r => (r.e.meds || []).some(m => m !== 'Wärmflasche')).length
   };
 }
@@ -308,14 +313,16 @@ function correlationNotes(rows) {
         out.push(`${name}: ${x.words.sort((u, v) => v.includes(' ') - u.includes(' ')).slice(0, 5).map(w => `„<b>${esc(w)}</b>“`).join(', ')} kam${x.words.length > 1 ? 'en' : ''} an ${x.n} Tagen vor. Am selben oder nächsten Tag gab es dann in ${Math.round(x.rate * 100)} % der Fälle ${label} (sonst ${Math.round(base * 100)} %).`));
     }
   }
+  // [Bezeichnung, Wort, Feld, Auffällig?, Rückrichtung prüfen: +1 höher / −1 niedriger an Beschwerdetagen / 0 nicht]
   const factors = [
-    ['hohem Stress', 'Stress', 'stress', v => v >= 3, true],
-    ['starker Angst', 'Angst', 'anxiety', v => v >= 3, true],
-    ['starker Wut', 'Wut', 'anger', v => v >= 3, true],
-    ['schlechtem Schlaf', 'Schlaf', 'sleep', v => v <= 2, false],
-    ['wenig Energie', 'Energie', 'energy', v => v <= 2, false]
+    ['schlechter Laune (−2 oder darunter)', 'Laune', 'mood', v => v <= -2, -1],
+    ['hohem Stress', 'Stress', 'stress', v => v >= 3, 1],
+    ['starker Angst', 'Angst', 'anxiety', v => v >= 3, 1],
+    ['starker Wut', 'Wut', 'anger', v => v >= 3, 1],
+    ['schlechtem Schlaf', 'Schlaf', 'sleep', v => v <= 2, 0],
+    ['wenig Energie', 'Energie', 'energy', v => v <= 2, 0]
   ];
-  for (const [label, noun, k, isHigh, emotion] of factors) {
+  for (const [label, noun, k, isHigh, dir] of factors) {
     const have = rows.filter(r => r.e[k] != null);
     const hi = have.filter(r => isHigh(r.e[k])), lo = have.filter(r => !isHigh(r.e[k]));
     if (have.length < 7 || hi.length < 3 || lo.length < 3) continue;
@@ -323,11 +330,12 @@ function correlationNotes(rows) {
       const a = hi.filter(r => near(r, f)).length / hi.length, b = lo.filter(r => near(r, f)).length / lo.length;
       if (a - b >= 0.2) out.push(`Nach Tagen mit ${label} gab es am selben oder nächsten Tag in ${Math.round(a * 100)} % der Fälle ${oLabel}, sonst in ${Math.round(b * 100)} %.`);
     }
-    if (emotion) {
+    if (dir) {
       const sR = have.filter(strong), oR = have.filter(r => !strong(r));
       if (sR.length >= 3 && oR.length >= 3) {
         const a = avg(sR.map(r => r.e[k])), b = avg(oR.map(r => r.e[k]));
-        if (a - b >= 0.7) out.push(`An Tagen mit starken Beschwerden war die ${noun === 'Stress' ? 'Stress-Belastung' : noun} höher (Ø ${f1(a)} statt ${f1(b)}). Körper und Gefühle beeinflussen sich vermutlich gegenseitig.`);
+        const fmt = k === 'mood' ? fs : f1;
+        if ((a - b) * dir >= 0.7) out.push(`An Tagen mit starken Beschwerden war ${k === 'mood' ? 'die Laune schlechter' : `die ${noun === 'Stress' ? 'Stress-Belastung' : noun} höher`} (Ø ${fmt(a)} statt ${fmt(b)}). Körper und Gefühle beeinflussen sich vermutlich gegenseitig.`);
       }
     }
   }
@@ -385,8 +393,8 @@ function analysisHTML() {
   if (tot.meds) notes.push(`Schmerzmittel an ${tot.meds} von ${tot.n} Tagen (${pct(tot.meds, tot.n)})${meds.length ? `, am häufigsten ${esc(meds[0][0])}` : ''}.`);
   const links = correlationNotes(rows);
 
-  const row = (name, g) => `<tr><td>${esc(name)}</td><td class="num">${g.n}</td><td class="num">${f1(g.pain)}</td><td class="num">${f1(g.cramps)}</td><td class="num">${pct(g.diar, g.n)}</td><td class="num">${pct(g.bleed, g.n)}</td><td class="num">${pct(g.spot, g.n)}</td><td class="num">${f1(g.stress)}</td><td class="num">${pct(g.meds, g.n)}</td></tr>`;
-  const head = '<tr><th>&nbsp;</th><th class="num">Tage</th><th class="num">Ø Schm.</th><th class="num">Ø Kr.</th><th class="num">Durchf.</th><th class="num">Blut.</th><th class="num">Schmier</th><th class="num">Ø Stress</th><th class="num">Schmerzm.</th></tr>';
+  const row = (name, g) => `<tr><td>${esc(name)}</td><td class="num">${g.n}</td><td class="num">${f1(g.pain)}</td><td class="num">${f1(g.cramps)}</td><td class="num">${pct(g.diar, g.n)}</td><td class="num">${pct(g.bleed, g.n)}</td><td class="num">${pct(g.spot, g.n)}</td><td class="num">${fs(g.mood)}</td><td class="num">${f1(g.stress)}</td><td class="num">${pct(g.meds, g.n)}</td></tr>`;
+  const head = '<tr><th>&nbsp;</th><th class="num">Tage</th><th class="num">Ø Schm.</th><th class="num">Ø Kr.</th><th class="num">Durchf.</th><th class="num">Blut.</th><th class="num">Schmier</th><th class="num">Ø Laune</th><th class="num">Ø Stress</th><th class="num">Schmerzm.</th></tr>';
 
   return `${head1}
   <p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>
@@ -395,14 +403,17 @@ function analysisHTML() {
     <div class="stat"><b>${f1(tot.cramps)}</b>Ø Krämpfe (0–10)</div>
     <div class="stat"><b>${pct(tot.bleed + tot.spot, tot.n)}</b>Tage mit Blutung oder Schmierblutung</div>
     <div class="stat"><b>${pct(tot.diar, tot.n)}</b>Tage mit Durchfall</div>
+    <div class="stat"><b>${fs(tot.mood)}</b>Ø Laune (−5 bis +5)</div>
     <div class="stat"><b>${f1(tot.stress)}</b>Ø Stress (0–5)</div>
     <div class="stat"><b>${pct(tot.meds, tot.n)}</b>Tage mit Schmerzmitteln</div>
+    <div class="stat"><b>${tot.n}</b>erfasste Tage</div>
   </div></div>
   ${notes.length ? `<div class="card"><h2 style="margin-top:0">Auffälligkeiten</h2>${notes.map(n => `<div class="insight">${n}</div>`).join('')}</div>` : ''}
   <div class="card"><h2 style="margin-top:0">Zusammenhänge: Essen, Emotionen &amp; Symptome</h2>
     ${links.length ? links.map(n => `<div class="insight">${n}</div>`).join('') : `<p class="muted">${rows.length < 10 ? 'Für Zusammenhänge braucht es etwa 10 erfasste Tage mit Essen und Emotionen.' : 'Bisher sind keine deutlichen Zusammenhänge erkennbar.'}</p>`}
     <p class="muted">Berücksichtigt werden Essensbeschreibungen, Uhrzeit und Menge der Mahlzeiten, Freitexte, Emotionen, Schlaf und Energie, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>
   <div class="card"><h2 style="margin-top:0">Symptome im Verlauf</h2>${chartSVG(rows, [{ key: 'pain', label: 'Schmerzen', color: 'var(--accent)' }, { key: 'cramps', label: 'Krämpfe', color: 'var(--warn)', dash: true }], 0, 10, true)}</div>
+  <div class="card"><h2 style="margin-top:0">Laune im Verlauf</h2>${chartSVG(rows, [{ key: 'mood', label: 'Laune', color: 'var(--accent)' }], -5, 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Emotionen im Verlauf</h2>${chartSVG(rows, [{ key: 'stress', label: 'Stress', color: 'var(--accent)' }, { key: 'anxiety', label: 'Angst', color: 'var(--lilac)', dash: true }, { key: 'anger', label: 'Wut', color: 'var(--warn)' }], 0, 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Schlaf &amp; Energie</h2>${chartSVG(rows, [{ key: 'sleep', label: 'Schlaf', color: 'var(--lilac)' }, { key: 'energy', label: 'Energie', color: 'var(--ok)', dash: true }], 1, 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Nach Ring-Phase</h2><div class="table-wrap"><table>${head}${order.map(k => row(k, groupStats(groups[k]))).join('')}</table></div></div>
@@ -439,7 +450,8 @@ function settingsHTML() {
     <button class="btn ghost small" data-action="csv">CSV</button>
     <label class="btn ghost small" style="margin:0;display:inline-flex;align-items:center">Backup laden<input type="file" id="s-import" accept="application/json,.json" hidden></label></div>
     <p class="muted">Die Daten liegen nur auf diesem Gerät. ${last ? `Letztes Backup: ${fmtDate(last)}.` : 'Noch kein Backup erstellt.'} Sichere das Backup z. B. in „Dateien“ oder iCloud.</p>
-    <button class="btn danger small" data-action="reset">Alle Tagebuchdaten löschen</button></div>`;
+    <button class="btn danger small" data-action="reset">Alle Tagebuchdaten löschen</button></div>
+  <p class="notice" style="text-align:center">Ringtagebuch ${APP_VERSION}</p>`;
 }
 
 // ---------- Export ----------
@@ -458,9 +470,9 @@ async function share(name, text, type) {
 }
 function csv() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const hdr = ['Datum', 'Tagebuch-Tag', 'Phase', 'Ringtag', 'Schmerzen', 'Schmerzorte', 'Kraempfe', 'Durchfall', 'Blutung', 'Angst', 'Wut', 'Stress', 'Schlaf', 'Energie', 'Schmerzmittel', 'Medikamente-Notiz', 'Essen', 'Essen-Freitext', 'Notiz'];
+  const hdr = ['Datum', 'Tagebuch-Tag', 'Phase', 'Ringtag', 'Schmerzen', 'Schmerzorte', 'Kraempfe', 'Durchfall', 'Blutung', 'Laune', 'Angst', 'Wut', 'Stress', 'Schlaf', 'Energie', 'Schmerzmittel', 'Medikamente-Notiz', 'Essen', 'Essen-Freitext', 'Notiz'];
   const lines = loggedDays().map(({ d, e, ph }) => [d, diaryDay(d), phaseLabel(ph), ph?.day, e.pain, (e.painAreas || []).join('; '), e.cramps, e.diarrhea != null ? DIARRHEA[e.diarrhea] : '',
-    e.bleeding ? Object.fromEntries(BLEEDING)[e.bleeding] : '', e.anxiety, e.anger, e.stress, e.sleep, e.energy, (e.meds || []).join('; '), e.medsNote,
+    e.bleeding ? Object.fromEntries(BLEEDING)[e.bleeding] : '', e.mood, e.anxiety, e.anger, e.stress, e.sleep, e.energy, (e.meds || []).join('; '), e.medsNote,
     (e.meals || []).filter(m => filled(m.text)).map(m => `${m.time} ${m.text} (${m.amount})`).join('; '), e.foodNote, e.note].map(q).join(';'));
   share(`ringtagebuch-${todayStr()}.csv`, '﻿' + [hdr.map(q).join(';'), ...lines].join('\r\n'), 'text/csv');
 }

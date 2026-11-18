@@ -1,0 +1,7 @@
+#!/bin/sh
+# Ringtagebuch hat keinen Hintergrund-Dienst. Start/Stopp schaltet nur die Web-Station-Adresse
+# (übernimmt das Paket-Zentrum über conf/resource).
+case "$1" in
+    start|stop|prestart|prestop|status) exit 0 ;;
+    *) exit 1 ;;
+esac
