@@ -34,7 +34,7 @@ function phaseOf(date) {
   if (n <= w + p) return { kind: 'pause', day: n - w, cycle, start };
   return { kind: 'over', day: n - w - p, cycle, start };
 }
-const phaseLabel = ph => !ph ? 'Vor Beginn' : ph.kind === 'ring' ? `Ring Woche ${ph.week}` : ph.kind === 'pause' ? 'Ringpause' : 'Wechsel überfällig';
+const phaseLabel = ph => !ph ? 'Vor Beginn' : ph.kind === 'ring' ? `Ring Woche ${ph.week}` : ph.kind === 'pause' ? 'Ringpause' : (ph.day === 1 && settings.pauseDays === 0 ? 'Ringwechsel heute' : 'Wechsel überfällig');
 
 // ---------- Erfassung ----------
 const BLEEDING = [['none', 'Keine'], ['spotting', 'Schmierblutung'], ['light', 'Leicht'], ['medium', 'Mittel'], ['heavy', 'Stark']];
@@ -70,9 +70,9 @@ function onboardingHTML() {
     <label>Ring eingesetzt am</label>
     <input type="date" id="ob-date" value="${todayStr()}" max="${todayStr()}">
     <label>Tage mit Ring</label>
-    <select id="ob-wear"><option value="21" selected>21 Tage (3 Wochen)</option><option value="28">28 Tage</option><option value="31">31 Tage</option></select>
+    <select id="ob-wear"><option value="21">21 Tage (3 Wochen)</option><option value="28" selected>28 Tage (4 Wochen)</option><option value="31">31 Tage</option></select>
     <label>Ringpause</label>
-    <select id="ob-pause"><option value="7" selected>7 Tage</option><option value="0">Keine (durchgehend)</option></select>
+    <select id="ob-pause"><option value="0" selected>Keine (durchgehend)</option><option value="7">7 Tage</option></select>
     <p><button class="btn" data-action="start">Los geht's</button></p>
   </div>
   <p class="notice">Alle Daten bleiben auf diesem Gerät und werden nirgends hochgeladen.</p>`;
@@ -93,7 +93,7 @@ function reminderBanner() {
   const { wearDays: w, pauseDays: p } = settings;
   if (ph.kind === 'pause' && ph.day === 1 && p > 0)
     return `<div class="insight"><b>Heute Ring entfernen.</b> Die Ringpause beginnt (${p} Tage).</div>`;
-  if (ph.kind === 'over' || (ph.kind === 'ring' && p === 0 && ph.day === w) )
+  if (ph.kind === 'over')
     return `<div class="insight"><b>Heute neuen Ring einsetzen.</b> <button class="btn small" data-action="newring">Neuen Ring eingesetzt</button></div>`;
   if (ph.kind === 'pause' && ph.day === p)
     return `<div class="insight"><b>Heute neuen Ring einsetzen.</b> <button class="btn small" data-action="newring">Neuen Ring eingesetzt</button></div>`;
