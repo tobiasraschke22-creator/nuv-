@@ -7,4 +7,4 @@ Offline-fähige Web-App (PWA) ohne Build-Schritt. Alle Daten bleiben im Browser 
 - Auswertung nach Ring-Phase und Zyklus, Diagramm, Auffälligkeiten, PDF/CSV/Backup
 
 Starten lokal: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen.
-Veröffentlichung: GitHub Pages über den Workflow `.github/workflows/pages.yml` (Settings → Pages → Source: GitHub Actions).
+Veröffentlichung: Die Dateien sind statisch und lassen sich bei jedem HTTPS-Hoster ablegen (z. B. Netlify, Cloudflare Pages).
