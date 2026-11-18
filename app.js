@@ -1,6 +1,6 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.1.2'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.2.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
 const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
@@ -69,7 +69,8 @@ const hasData = e => !!e && (['pain', 'cramps', 'diarrhea', 'mood', 'anxiety', '
 let tab = 'today';
 let curDate = todayStr();
 let calMonth = todayStr().slice(0, 7);
-let period = 'all';
+let period = 'month';
+let pMonth = todayStr().slice(0, 7);
 let flash = '';
 
 const getE = () => entries[curDate] || {};
@@ -300,6 +301,7 @@ const pct = (n, d) => d ? Math.round(n / d * 100) + ' %' : '–';
 
 function loggedDays() {
   let rows = Object.keys(entries).filter(d => hasData(entries[d])).sort().map(d => ({ d, e: entries[d], ph: phaseOf(d) }));
+  if (period === 'month') rows = rows.filter(r => r.d.startsWith(pMonth));
   if (period === '31') rows = rows.filter(r => r.d >= addDays(todayStr(), -30));
   if (period === 'ring') { const cur = phaseOf(todayStr()); rows = cur ? rows.filter(r => r.ph && r.ph.start === cur.start) : []; }
   return rows;
@@ -426,16 +428,138 @@ function analysisHTML() {
 }
 function analysisPane() { const p = analysisParts.cache; return p.parts[aSection] + p.footer; }
 // alles auf einmal (Bericht, Drucken)
-function analysisFull() { const p = analysisParts(); return p.head + (p.enough ? ASECTIONS.map(x => p.parts[x.id]).join('') + p.footer : p.body); }
+function analysisFull() {
+  const p = analysisParts();
+  const promptCard = `<div class="card"><h2 style="margin-top:0">Auftrag an die KI</h2><pre class="ai">${esc(aiPrompt())}</pre></div>`;
+  const daysCard = `<div class="card"><h2 style="margin-top:0">Tagesdaten</h2><pre class="ai">${esc(aiDays())}</pre></div>`;
+  return p.head + promptCard + (p.enough ? ASECTIONS.map(x => p.parts[x.id]).join('') : p.body) + daysCard + (p.enough ? p.footer : '');
+}
+
+// ---------- KI-Auftrag ----------
+const plain = html => { const d = document.createElement('div'); d.innerHTML = html; return d.textContent.replace(/\s+/g, ' ').trim(); };
+function aiPrompt() {
+  const { wearDays: w, pauseDays: p } = settings;
+  const rhythm = p ? `${w} Tage mit Ring, danach ${p} Tage Pause` : `durchgehend ohne Pause, Ringwechsel alle ${w} Tage`;
+  return `Du bist ein interdisziplinäres Team aus
+1. einer Gynäkologin mit Schwerpunkt Endometriose und hormonelle Verhütung,
+2. einer Ernährungsfachkraft mit Erfahrung bei Endometriose,
+3. einer Psychologin mit Schwerpunkt chronische Schmerzen.
+
+HINTERGRUND
+Ich habe Endometriose und verwende den Vaginalring NuvaRing (Etonogestrel 0,120 mg und Ethinylestradiol 0,015 mg pro 24 Stunden), ${rhythm}. Ich führe dazu täglich ein Tagebuch in vier Bereichen: Endometriose-Symptome, Essen, Gefühle/Psyche und Körper. Unten findest du alle Daten für ${periodLabel()}.
+
+SO SIND DIE WERTE ZU LESEN
+- Schmerzen und Krämpfe: 0 bis 10 (0 = keine, 10 = unerträglich)
+- Durchfall: keiner, 1×, 2–3×, 4× oder mehr pro Tag
+- Blutung: keine, Schmierblutung, leicht, mittel, stark
+- Laune: −5 (sehr schlecht) bis +5 (sehr gut)
+- Angst, Wut, Stress: 0 bis 5 (0 = gar nicht, 5 = sehr stark)
+- Schlaf (letzte Nacht) und Energie: 1 bis 5 (1 = sehr schlecht, 5 = sehr gut)
+- Ring-Tag 1 ist der Tag, an dem ein neuer Ring eingesetzt wurde.
+- Fehlt ein Wert, wurde er nicht erfasst. Das bedeutet nicht „0“.
+
+DEINE AUFGABE
+1. Datenlage: Wie vollständig sind die Daten, und wie belastbar sind Aussagen daraus?
+2. Einfluss des NuvaRings: Wie verändern sich die vier Bereiche im Verlauf eines Rings (erste Woche bis zum Wechsel) und rund um den Ringwechsel${p ? ' bzw. die Ringpause' : ''}? Gibt es Durchbruch- oder Schmierblutungen, und wann treten sie auf?
+3. Die vier Bereiche einzeln:
+   - Endometriose-Symptome (Schmerzen, Schmerzorte, Krämpfe, Durchfall, Blutung)
+   - Essen (was, wann, wie viel)
+   - Gefühle/Psyche (Laune, Angst, Wut, Stress, Freitext)
+   - Körper (Schlaf, Energie, Schmerzmittel)
+4. Wechselwirkungen: Wie beeinflussen sich die Bereiche gegenseitig, in beide Richtungen und auch zeitversetzt? Zum Beispiel Essen → Beschwerden am selben oder nächsten Tag, Schmerz → Laune, Stress → Schmerz, Schlaf → Schmerz und Laune.
+5. Auffällige Tage oder Muster, die du besonders hervorheben würdest.
+6. Zusammenfassung und Fazit: zuerst je ein kurzes Fazit aus Sicht der Gynäkologin, der Ernährungsfachkraft und der Psychologin, dann ein gemeinsames Fazit.
+7. Nächste Schritte: was ich weiter beobachten sollte, welche Ernährungsideen einen Versuch wert sind, was mir psychisch helfen kann, und 3 bis 5 Fragen für meinen nächsten Termin bei der Frauenärztin.
+
+WICHTIG
+- Trenne klar zwischen dem, was die Daten zeigen, und Vermutungen. Ein zeitlicher Zusammenhang ist kein Beweis für eine Ursache. Sag, wenn die Datenmenge für eine Aussage nicht reicht.
+- Stelle keine Diagnosen und empfiehl keine eigenmächtige Änderung der Verhütung oder der Medikamente. Sag stattdessen, was ich mit meiner Ärztin besprechen sollte.
+- Falls in den Daten Warnzeichen auftauchen, bei denen ich nicht bis zum nächsten Termin warten sollte, nenne sie deutlich.
+- Fehlen dir für eine gute Einschätzung wichtige Angaben, frag mich zuerst danach.
+- Antworte auf Deutsch, verständlich und mit Überschriften gegliedert.`;
+}
+function dayText(d, e, ph) {
+  const parts = [];
+  const ring = ph ? `${phaseLabel(ph)}, Ring ${ph.cycle}, Ring-Tag ${ph.kind === 'ring' ? ph.day : ph.kind === 'pause' ? settings.wearDays + ph.day : settings.wearDays + settings.pauseDays + ph.day}${settings.inserts.includes(d) ? ', NEUER RING EINGESETZT' : ''}` : 'vor dem ersten Ring';
+  if (!hasData(e)) return `${fmtLong(d)} (${ring}): nicht erfasst`;
+  const n = (v, max) => v == null ? null : `${v}/${max}`;
+  const join = a => a.filter(Boolean).join(', ');
+  const sym = join([e.pain != null && `Schmerzen ${n(e.pain, 10)}${(e.painAreas || []).length ? ` (${e.painAreas.join(', ')})` : ''}`,
+    e.cramps != null && `Krämpfe ${n(e.cramps, 10)}`, e.diarrhea != null && `Durchfall: ${DIARRHEA[e.diarrhea]}`,
+    e.bleeding && `Blutung: ${Object.fromEntries(BLEEDING)[e.bleeding]}`]);
+  const meals = (e.meals || []).filter(m => filled(m.text)).map(m => `${m.time || '?'} ${m.text.trim()} (${m.amount})`).join('; ');
+  const food = join([meals, filled(e.foodNote) && `Notiz: ${e.foodNote.trim()}`]);
+  const emo = join([e.mood != null && `Laune ${signed(e.mood)}`, e.anxiety != null && `Angst ${n(e.anxiety, 5)}`, e.anger != null && `Wut ${n(e.anger, 5)}`,
+    e.stress != null && `Stress ${n(e.stress, 5)}`, filled(e.note) && `Notiz: ${e.note.trim()}`]);
+  const body = join([e.sleep != null && `Schlaf ${n(e.sleep, 5)}`, e.energy != null && `Energie ${n(e.energy, 5)}`,
+    ((e.meds || []).length || filled(e.medsNote)) && `Schmerzmittel/Hilfen: ${join([(e.meds || []).join(', '), filled(e.medsNote) && e.medsNote.trim()])}`]);
+  parts.push(`${fmtLong(d)} (${ring})`);
+  parts.push(`  Symptome: ${sym || 'nicht erfasst'}`);
+  parts.push(`  Essen: ${food || 'nicht erfasst'}`);
+  parts.push(`  Gefühle: ${emo || 'nicht erfasst'}`);
+  parts.push(`  Körper: ${body || 'nicht erfasst'}`);
+  return parts.join('\n');
+}
+function aiDays() {
+  const rows = loggedDays();
+  if (!rows.length) return 'Für diesen Zeitraum wurden keine Daten erfasst.';
+  let from = rows[0].d, to = rows[rows.length - 1].d;
+  if (period === 'month') {
+    from = pMonth + '-01';
+    const end = fromNum(dayNum(addDays(from, 32).slice(0, 7) + '-01') - 1);
+    to = end < todayStr() ? end : todayStr();
+  }
+  const first = sortedInserts()[0];
+  if (from < first) from = first;
+  const out = [];
+  for (let i = dayNum(from); i <= dayNum(to); i++) { const d = fromNum(i); out.push(dayText(d, entries[d] || {}, phaseOf(d))); }
+  return out.join('\n\n');
+}
+function aiText() {
+  const p = analysisParts();
+  const ins = sortedInserts().map((d, i) => `Ring ${i + 1}: eingesetzt am ${fmtLong(d)}`).join('\n');
+  let txt = aiPrompt() + '\n\n---\n\nRINGWECHSEL\n' + ins;
+  if (p.enough) {
+    const t = p.tot;
+    txt += `\n\nÜBERBLICK (von der App berechnet)
+- Erfasste Tage: ${t.n}
+- Durchschnitt Schmerzen: ${f1(t.pain)} von 10, Krämpfe: ${f1(t.cramps)} von 10
+- Tage mit Blutung: ${pct(t.bleed, t.n)}, mit Schmierblutung: ${pct(t.spot, t.n)}, mit Durchfall: ${pct(t.diar, t.n)}
+- Durchschnitt Laune: ${fs(t.mood)}, Stress: ${f1(t.stress)} von 5
+- Tage mit Schmerzmitteln: ${pct(t.meds, t.n)}`;
+    const found = [...p.notes, ...p.links].map(plain);
+    if (found.length) txt += '\n\nMUSTER, DIE DIE APP GEFUNDEN HAT (bitte kritisch prüfen)\n' + found.map(x => '- ' + x).join('\n');
+  }
+  return txt + '\n\nTAGESDATEN\n\n' + aiDays();
+}
+async function aiCopy() {
+  const txt = aiText();
+  try { await navigator.clipboard.writeText(txt); toast('Kopiert ✓ Jetzt in der KI-App einfügen'); return; } catch (e) { /* weiter mit Ausweichweg */ }
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, txt.length);
+  const ok = document.execCommand && document.execCommand('copy');
+  ta.remove();
+  toast(ok ? 'Kopiert ✓ Jetzt in der KI-App einfügen' : 'Kopieren ging nicht – bitte „Als Datei teilen“ nutzen');
+}
 function analysisParts() {
   const res = analysisData();
   analysisParts.cache = res;
   return res;
 }
+const monthName = ym => new Date(ym + '-01T00:00:00Z').toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+const fmtLong = s => new Date(s + 'T00:00:00Z').toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+function periodLabel() {
+  if (period === 'month') return `den Monat ${monthName(pMonth)}`;
+  if (period === 'ring') { const cur = phaseOf(todayStr()); return cur ? `den aktuellen Ring (Ring ${cur.cycle}, eingesetzt am ${fmtLong(cur.start)})` : 'den aktuellen Ring'; }
+  if (period === '31') return `die letzten 31 Tage (${fmtLong(addDays(todayStr(), -30))} bis ${fmtLong(todayStr())})`;
+  return 'den gesamten Aufzeichnungszeitraum';
+}
 function analysisData() {
   const rows = loggedDays();
-  const periods = [{ id: 'all', label: 'Gesamt' }, { id: 'ring', label: 'Aktueller Ring' }, { id: '31', label: 'Letzte 31 Tage' }];
-  const head1 = `<h1>Auswertung</h1>${segHTML(periods, period, 'period', null, 'static')}`;
+  const periods = [{ id: 'month', label: 'Monat' }, { id: 'ring', label: 'Ring' }, { id: '31', label: '31 Tage' }, { id: 'all', label: 'Gesamt' }];
+  const monthNav = period === 'month' ? `<div class="month-nav noprint"><button class="btn ghost small round" data-action="pmonth" data-d="-1" aria-label="Voriger Monat">‹</button><b>${monthName(pMonth)}</b><button class="btn ghost small round" data-action="pmonth" data-d="1" aria-label="Nächster Monat" ${pMonth >= todayStr().slice(0, 7) ? 'disabled' : ''}>›</button></div>` : '';
+  const head1 = `<h1>Auswertung</h1>${segHTML(periods, period, 'period', null, 'static')}${monthNav}`;
   if (rows.length < 3) return { head: head1, enough: false, body: `<div class="card"><p>Noch zu wenig Daten für diesen Zeitraum. Sobald ein paar Tage erfasst sind, erscheint hier die Auswertung.</p><p class="muted">Erfasste Tage: ${rows.length}</p></div>` };
   const tot = groupStats(rows);
   const first = rows[0].d, last = rows[rows.length - 1].d;
@@ -502,11 +626,15 @@ function analysisData() {
   <div class="card"><h2 style="margin-top:0">Schlaf &amp; Energie</h2>${chartSVG(rows, [{ key: 'sleep', label: 'Schlaf', color: 'var(--lilac)' }, { key: 'energy', label: 'Energie', color: 'var(--ok)', dash: true }], 1, 5, false)}</div>`;
   parts.tables = `<div class="card"><h2 style="margin-top:0">Nach Ring-Phase</h2><div class="table-wrap"><table>${head}${order.map(k => row(k, groupStats(groups[k]))).join('')}</table></div></div>
   <div class="card"><h2 style="margin-top:0">Nach Ring</h2><div class="table-wrap"><table>${head}${Object.keys(cycles).map(c => row(`Ring ${c} (ab ${fmtShort(cycles[c][0].ph.start)})`, groupStats(cycles[c]))).join('')}</table></div></div>`;
-  const footer = `<div class="card noprint"><h2 style="margin-top:0">Für die Ärztin</h2>
+  const footer = `<div class="card noprint"><h2 style="margin-top:0">Mit KI auswerten</h2>
+    <p class="muted">Erstellt einen fertigen Auftrag mit allen Tagesdaten für ${esc(periodLabel())}. Einfach in ChatGPT, Claude oder eine andere KI einfügen.</p>
+    <div class="row wrap" style="margin-top:10px"><button class="btn" data-action="aicopy">Für KI kopieren</button><button class="btn ghost" data-action="aishare">Als Datei teilen</button></div>
+    <details class="ai-preview"><summary>Auftrag ansehen</summary><pre class="ai">${esc(aiPrompt())}</pre></details></div>
+  <div class="card noprint"><h2 style="margin-top:0">Für die Ärztin</h2>
     <div class="row wrap"><button class="btn" data-action="report">Bericht teilen</button><button class="btn ghost" data-action="print">Drucken / PDF</button><button class="btn ghost" data-action="csv">CSV</button></div>
-    <p class="muted">„Bericht teilen“ erstellt eine Datei, die du per Mail oder Nachricht schicken oder in „Dateien“ sichern kannst.</p></div>
+    <p class="muted">Bericht und PDF beginnen mit dem KI-Auftrag und enthalten am Ende alle Tagesdaten. So kannst du die Datei auch direkt in eine KI hochladen.</p></div>
   <p class="notice">Diese Auswertung zeigt Muster in den eigenen Aufzeichnungen und ersetzt keine ärztliche Beratung. Für das Gespräch mit der Frauenärztin oder dem Frauenarzt ist sie eine gute Grundlage.</p>`;
-  return { head: `${head1}<p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>`, enough: true, parts, footer };
+  return { head: `${head1}<p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>`, enough: true, parts, footer, notes, links, tot };
 }
 
 // ---------- Einstellungen ----------
@@ -567,8 +695,8 @@ function report() {
   clone.querySelectorAll('.noprint').forEach(n => n.remove());
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ringtagebuch – Bericht ${todayStr()}</title><style>${CSS_TEXT}body{padding-bottom:24px}</style></head>
-<body><main><p class="muted">Ringtagebuch · Bericht erstellt am ${fmtDate(todayStr())} · Ring-Rhythmus: ${settings.wearDays} Tage${settings.pauseDays ? `, ${settings.pauseDays} Tage Pause` : ', durchgehend'}</p>${clone.innerHTML}</main></body></html>`;
-  share(`ringtagebuch-bericht-${todayStr()}.html`, html, 'text/html');
+<body><main><p class="muted">Ringtagebuch · Bericht für ${esc(periodLabel())} · erstellt am ${fmtDate(todayStr())} · Ring-Rhythmus: ${settings.wearDays} Tage${settings.pauseDays ? `, ${settings.pauseDays} Tage Pause` : ', durchgehend'}</p>${clone.innerHTML}</main></body></html>`;
+  share(`ringtagebuch-bericht-${period === 'month' ? pMonth : todayStr()}.html`, html, 'text/html');
 }
 // Kalendertermine: auf dem iPhone direkt öffnen, dann zeigt iOS die Kalender-Vorschau mit „Alle hinzufügen“
 function openCalendar(name, text) {
@@ -630,6 +758,9 @@ view.addEventListener('click', ev => {
     case 'open': curDate = d.d; tab = 'today'; window.scrollTo(0, 0); render(true); return;
     case 'month': { const [y, m] = calMonth.split('-').map(Number); calMonth = new Date(Date.UTC(y, m - 1 + +d.d, 1)).toISOString().slice(0, 7); break; }
     case 'period': period = d.v; break;
+    case 'pmonth': { const [y, m] = pMonth.split('-').map(Number); const n = new Date(Date.UTC(y, m - 1 + +d.d, 1)).toISOString().slice(0, 7); if (n <= todayStr().slice(0, 7)) pMonth = n; break; }
+    case 'aicopy': aiCopy(); return;
+    case 'aishare': share(`ringtagebuch-ki-${period === 'month' ? pMonth : todayStr()}.txt`, aiText(), 'text/plain'); return;
     case 'addmeal': {
       const now = new Date();
       const time = curDate === todayStr() ? `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` : '12:00';
