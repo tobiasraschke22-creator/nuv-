@@ -1,21 +1,21 @@
 /* Ringtagebuch – weiß, zartrosa, viel Glas, Bewegungen wie bei iOS */
 :root {
   color-scheme: light;
-  --text: #3b2a31;
-  --muted: #8a717c;
+  --text: #2d2a2c;
+  --muted: #7a7377;
   --accent: #d6628a;
   --accent-2: #f2a0bb;
-  --accent-soft: rgba(242, 160, 187, .2);
+  --accent-soft: rgba(214, 98, 138, .08);
   --glass: rgba(255, 255, 255, .34);
   --glass-strong: rgba(255, 255, 255, .55);
   --glass-border: rgba(255, 255, 255, .7);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, .9), inset 0 -1px 0 rgba(255, 255, 255, .25);
-  --line: rgba(214, 98, 138, .16);
+  --line: rgba(60, 50, 55, .1);
   --ok: #5fb394;
   --warn: #e3a255;
   --lilac: #a688d9;
   --blood: #d23d5e;
-  --shadow: 0 10px 34px rgba(214, 98, 138, .13);
+  --shadow: 0 10px 30px rgba(40, 30, 35, .07);
   --blur: blur(28px) saturate(190%);
   --spring: cubic-bezier(.34, 1.56, .64, 1);
   --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -23,7 +23,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; color: var(--text); background: #fff7f9;
+  margin: 0; color: var(--text); background: #f8f7f8;
   font: 16px/1.45 ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding-bottom: calc(100px + env(safe-area-inset-bottom));
   touch-action: manipulation;
@@ -32,12 +32,11 @@ body {
 body::before {
   content: ""; position: fixed; inset: -10%; z-index: -1;
   background:
-    radial-gradient(40% 30% at 12% 6%, rgba(255, 170, 200, .75) 0, transparent 70%),
-    radial-gradient(38% 28% at 92% 16%, rgba(255, 205, 225, .9) 0, transparent 70%),
-    radial-gradient(45% 32% at 0% 58%, rgba(250, 190, 215, .6) 0, transparent 70%),
-    radial-gradient(40% 30% at 100% 70%, rgba(215, 195, 245, .45) 0, transparent 70%),
-    radial-gradient(50% 30% at 40% 100%, rgba(255, 215, 200, .55) 0, transparent 70%),
-    #fff7f9;
+    radial-gradient(40% 30% at 12% 6%, rgba(255, 200, 218, .3) 0, transparent 70%),
+    radial-gradient(38% 28% at 92% 18%, rgba(255, 226, 206, .3) 0, transparent 70%),
+    radial-gradient(45% 32% at 0% 62%, rgba(232, 230, 242, .5) 0, transparent 70%),
+    radial-gradient(45% 30% at 100% 82%, rgba(226, 242, 210, .3) 0, transparent 70%),
+    #f8f7f8;
 }
 main {
   max-width: 640px; margin: 0 auto;
@@ -78,7 +77,7 @@ button { cursor: pointer; }
 .btn {
   background: linear-gradient(135deg, var(--accent-2), var(--accent)); color: #fff; border: 0; border-radius: 18px;
   padding: 12px 18px; font-weight: 600; min-height: 44px;
-  box-shadow: 0 6px 16px rgba(214, 98, 138, .28), inset 0 1px 0 rgba(255, 255, 255, .45);
+  box-shadow: 0 4px 12px rgba(214, 98, 138, .18), inset 0 1px 0 rgba(255, 255, 255, .45);
 }
 .btn.ghost {
   background: var(--glass-strong); color: var(--accent); border: 1px solid var(--glass-border); box-shadow: var(--glass-edge);
@@ -93,10 +92,10 @@ input[type=date], input[type=number], input[type=time], input[type=text], select
   -webkit-appearance: none; appearance: none;
   background: rgba(255, 255, 255, .45); border: 1px solid var(--glass-border);
   border-radius: 14px; padding: 10px 12px; width: 100%; min-height: 44px; font-size: 16px;
-  box-shadow: inset 0 1px 3px rgba(214, 98, 138, .1);
+  box-shadow: inset 0 1px 3px rgba(40, 30, 35, .05);
   transition: background-color .25s, box-shadow .25s;
 }
-input:focus, select:focus, textarea:focus { outline: none; background: rgba(255, 255, 255, .75); box-shadow: 0 0 0 3px rgba(214, 98, 138, .22); }
+input:focus, select:focus, textarea:focus { outline: none; background: rgba(255, 255, 255, .75); box-shadow: 0 0 0 3px rgba(214, 98, 138, .16); }
 textarea { min-height: 84px; resize: vertical; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4px; }
@@ -109,7 +108,7 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
 }
 .chip.on, .scale button.on {
   background: linear-gradient(135deg, var(--accent-2), var(--accent)); border-color: transparent; color: #fff;
-  box-shadow: 0 4px 12px rgba(214, 98, 138, .3), inset 0 1px 0 rgba(255, 255, 255, .4);
+  box-shadow: 0 3px 10px rgba(214, 98, 138, .2), inset 0 1px 0 rgba(255, 255, 255, .4);
 }
 .scale { display: grid; gap: 4px; }
 .scale button {
@@ -126,12 +125,12 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
 .status { display: flex; gap: 14px; align-items: center; }
 .badge {
   width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem;
-  color: #fff; flex: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 6px 14px rgba(214, 98, 138, .25);
+  color: #fff; flex: none; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 4px 12px rgba(40, 30, 35, .12);
 }
 .badge.ring { background: linear-gradient(135deg, var(--accent-2), var(--accent)); }
 .badge.pause { background: linear-gradient(135deg, #a4dcc7, var(--ok)); }
 .badge.over { background: linear-gradient(135deg, #f5cc90, var(--warn)); }
-.progress { height: 8px; background: rgba(214, 98, 138, .13); border-radius: 6px; overflow: hidden; margin-top: 12px; }
+.progress { height: 8px; background: rgba(60, 50, 55, .08); border-radius: 6px; overflow: hidden; margin-top: 12px; }
 .progress > i {
   display: block; height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); border-radius: 6px;
   transform-origin: left; animation: grow 1s var(--ease-out) both .15s;
@@ -142,13 +141,13 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
 .seg {
   position: sticky; top: calc(8px + env(safe-area-inset-top)); z-index: 5;
   display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); padding: 4px; margin: 0 0 14px;
-  border-radius: 20px; box-shadow: var(--shadow), var(--glass-edge); background: rgba(255, 252, 253, .6);
+  border-radius: 20px; box-shadow: var(--shadow), var(--glass-edge); background: rgba(255, 255, 255, .6);
 }
 .seg.static { position: relative; top: auto; z-index: auto; }
 .seg-pill {
   position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc((100% - 8px) / var(--n));
   border-radius: 16px; background: rgba(255, 255, 255, .92);
-  box-shadow: 0 3px 10px rgba(214, 98, 138, .2), inset 0 1px 0 #fff;
+  box-shadow: 0 2px 8px rgba(40, 30, 35, .1), inset 0 1px 0 #fff;
   transform: translateX(calc(var(--i) * 100%)); transition: transform .5s var(--spring);
 }
 .seg button {
@@ -158,7 +157,7 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
 .seg button.on { color: var(--accent); }
 .seg-dot {
   display: block; width: 6px; height: 6px; margin: 4px auto 0; border-radius: 50%;
-  background: rgba(214, 98, 138, .18); transition: background-color .3s;
+  background: rgba(60, 50, 55, .14); transition: background-color .3s;
 }
 .seg-dot.done { background: var(--accent); }
 
@@ -195,13 +194,13 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
 #tabs {
   position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 10;
   max-width: 616px; margin: 0 auto; display: flex; padding: 6px;
-  background: rgba(255, 250, 252, .8); border-radius: 28px;
-  box-shadow: 0 12px 36px rgba(214, 98, 138, .22), var(--glass-edge);
+  background: rgba(255, 255, 255, .8); border-radius: 28px;
+  box-shadow: 0 10px 30px rgba(40, 30, 35, .1), var(--glass-edge);
 }
 .tab-pill {
   position: absolute; top: 6px; bottom: 6px; left: 6px; width: calc((100% - 12px) / 4);
   border-radius: 22px; background: rgba(255, 255, 255, .9);
-  box-shadow: 0 3px 12px rgba(214, 98, 138, .22), inset 0 1px 0 #fff;
+  box-shadow: 0 2px 10px rgba(40, 30, 35, .1), inset 0 1px 0 #fff;
   transform: translateX(calc(var(--i, 0) * 100%)); transition: transform .55s var(--spring);
 }
 #tabs button {
@@ -215,7 +214,7 @@ label { display: block; font-size: .9rem; color: var(--muted); margin: 12px 0 4p
   position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top)); z-index: 20;
   padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: .92rem; white-space: nowrap; max-width: 92vw;
   overflow: hidden; text-overflow: ellipsis; background: rgba(255, 255, 255, .7);
-  box-shadow: 0 10px 30px rgba(214, 98, 138, .25), var(--glass-edge);
+  box-shadow: 0 10px 30px rgba(40, 30, 35, .12), var(--glass-edge);
   transform: translate(-50%, -160%); opacity: 0; transition: transform .55s var(--spring), opacity .3s; pointer-events: none;
 }
 #toast.show { transform: translate(-50%, 0); opacity: 1; }
@@ -248,10 +247,10 @@ td:first-child { min-width: 110px; }
 .table-wrap { overflow-x: auto; }
 .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .stat { border-radius: 20px; padding: 12px; font-size: .9rem; color: var(--muted); box-shadow: var(--glass-edge); }
-.stat b { display: block; font-size: 1.5rem; color: var(--accent); }
+.stat b { display: block; font-size: 1.5rem; color: var(--text); }
 .insight {
   border-left: 4px solid var(--accent); padding: 9px 12px; margin: 8px 0; border-radius: 4px 16px 16px 4px;
-  font-size: .92rem; background: rgba(242, 160, 187, .18);
+  font-size: .92rem; background: rgba(255, 255, 255, .45);
 }
 .insight .btn { margin-top: 6px; }
 svg text { fill: var(--muted); font-size: 10px; }

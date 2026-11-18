@@ -1,6 +1,6 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.1.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.1.1'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
 const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
