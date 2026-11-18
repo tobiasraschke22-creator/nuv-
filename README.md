@@ -2,9 +2,16 @@
 
 Offline-fähige Web-App (PWA) ohne Build-Schritt. Alle Daten bleiben im Browser (localStorage).
 
-- Tägliches Assessment: Endometriose-Symptome (Schmerzen, Krämpfe, Durchfall, Blutung), Essenstagebuch, Emotionen (Angst, Wut, Stress, Freitext)
-- Ring-Zyklus mit Wechsel-Hinweis und Kalender-Export (.ics, 2× täglich)
-- Auswertung nach Ring-Phase und Zyklus, Diagramm, Auffälligkeiten, PDF/CSV/Backup
+- Tägliches Assessment ab dem ersten Ring-Tag:
+  - Endometriose-Symptome: Schmerzen mit Ort, Krämpfe, Durchfall, Blutung
+  - Essenstagebuch: Mahlzeiten mit Uhrzeit und Menge, Freitext
+  - Emotionen: Angst, Wut, Stress, Freitext
+  - Körper: Schlaf, Energie, Schmerzmittel
+- Ring-Rhythmus durchgehend oder mit Pause, Tagebuch-Tag-Zähler, Wechsel-Hinweise
+- Kalender-Erinnerungen (.ics): Ringwechsel 2× am Tag, tägliche Tagebuch-Erinnerung
+- Auswertung (gesamt, aktueller Ring, letzte 31 Tage): Zusammenhänge zwischen Essen,
+  Emotionen, Schlaf und Symptomen, Verläufe, Vergleich nach Ring-Woche und Ring
+- Bericht als Datei teilen (für die Ärztin), Drucken, CSV, Backup
 
 Starten lokal: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen.
 Veröffentlichung: Die Dateien sind statisch und lassen sich bei jedem HTTPS-Hoster ablegen (z. B. Netlify, Cloudflare Pages).
