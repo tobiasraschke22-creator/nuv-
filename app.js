@@ -1,6 +1,6 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.0.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.1.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
 const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
@@ -80,12 +80,77 @@ function patch(p) {
 
 // ---------- Render ----------
 const view = document.getElementById('view');
-function render() {
-  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-  document.getElementById('tabs').hidden = !settings;
-  if (!settings) { view.innerHTML = onboardingHTML(); return; }
-  view.innerHTML = { today: todayHTML, history: historyHTML, analysis: analysisHTML, settings: settingsHTML }[tab]();
+const TABS = ['today', 'history', 'analysis', 'settings'];
+function render(anim) {
+  const nav = document.getElementById('tabs');
+  nav.querySelectorAll('button').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-current', on ? 'page' : 'false'); });
+  nav.style.setProperty('--i', TABS.indexOf(tab));
+  nav.hidden = !settings;
+  view.innerHTML = !settings ? onboardingHTML() : { today: todayHTML, history: historyHTML, analysis: analysisHTML, settings: settingsHTML }[tab]();
+  if (anim) replay(view, 'view-in');
   flash = '';
+}
+// Animation neu starten (Klasse kurz entfernen, Layout erzwingen, wieder setzen)
+function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = msg; replay(t, 'show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ---------- Reiter (Segment-Schalter wie bei iOS) ----------
+const SECTIONS = [
+  { id: 'sym', label: 'Symptome', keys: ['pain', 'painAreas', 'cramps', 'diarrhea', 'bleeding'] },
+  { id: 'food', label: 'Essen', keys: ['meals', 'foodNote'] },
+  { id: 'emo', label: 'Gefühle', keys: ['mood', 'anxiety', 'anger', 'stress', 'note'] },
+  { id: 'body', label: 'Körper', keys: ['sleep', 'energy', 'meds', 'medsNote'] }
+];
+const ASECTIONS = [
+  { id: 'overview', label: 'Überblick' }, { id: 'links', label: 'Zusammen­hänge' },
+  { id: 'charts', label: 'Verläufe' }, { id: 'tables', label: 'Tabellen' }
+];
+let section = 'sym', aSection = 'overview';
+function secDone(sec, e) {
+  return sec.keys.some(k => {
+    const v = e[k];
+    if (k === 'meals') return hasMeals(e);
+    if (Array.isArray(v)) return v.length > 0;
+    if (typeof v === 'string') return filled(v);
+    return v != null;
+  });
+}
+function segHTML(items, active, action, e, cls = '') {
+  const i = items.findIndex(x => x.id === active);
+  return `<div class="seg noprint ${cls}" role="tablist" style="--n:${items.length};--i:${i}"><span class="seg-pill" aria-hidden="true"></span>${items.map(x =>
+    `<button role="tab" aria-selected="${x.id === active}" class="${x.id === active ? 'on' : ''}" data-action="${action}" data-v="${x.id}">${x.label}${e ? `<i class="seg-dot ${secDone(x, e) ? 'done' : ''}" aria-hidden="true"></i>` : ''}</button>`).join('')}</div>`;
+}
+function updateDots() {
+  const e = getE();
+  view.querySelectorAll('.seg [data-action=section]').forEach(b => {
+    const dot = b.querySelector('.seg-dot'), done = secDone(SECTIONS.find(x => x.id === b.dataset.v), e);
+    if (dot && dot.classList.contains('done') !== done) { dot.classList.toggle('done', done); if (done) replay(dot, 'pop'); }
+  });
+}
+// Reiter wechseln: Kapsel gleitet, Inhalt schiebt sich aus der passenden Richtung herein
+function switchTo(id) {
+  const today = tab === 'today', list = today ? SECTIONS : ASECTIONS, cur = today ? section : aSection;
+  if (id === cur || !list.some(x => x.id === id)) return;
+  const idx = x => list.findIndex(y => y.id === x);
+  const dir = idx(id) > idx(cur) ? 'from-right' : 'from-left';
+  if (today) section = id; else aSection = id;
+  const seg = view.querySelector('.seg:not(.static)'), pane = document.getElementById('pane');
+  seg.style.setProperty('--i', idx(id));
+  seg.querySelectorAll('button').forEach(b => { const on = b.dataset.v === id; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+  pane.innerHTML = today ? paneHTML() : analysisPane();
+  pane.classList.remove('from-left', 'from-right'); void pane.offsetWidth; pane.classList.add(dir);
+  const y = pane.getBoundingClientRect().top + window.scrollY - seg.offsetHeight - 24;
+  if (window.scrollY > y) window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+}
+function step(n) {
+  const list = tab === 'today' ? SECTIONS : ASECTIONS, cur = tab === 'today' ? section : aSection;
+  const i = list.findIndex(x => x.id === cur) + n;
+  if (i >= 0 && i < list.length) switchTo(list[i].id);
 }
 
 function onboardingHTML() {
@@ -148,51 +213,59 @@ function todayHTML() {
       <div class="progress"><i style="width:${Math.min(100, pct)}%"></i></div>
       ${isToday && ph.kind !== 'over' && !settings.inserts.includes(todayStr()) ? '<p style="margin-top:10px"><button class="btn ghost small" data-action="newring">Ring heute gewechselt</button></p>' : ''}`;
   }
-  const meals = e.meals || [];
   return `
-  <div class="row between"><button class="btn ghost small" data-action="day" data-d="-1" aria-label="Vortag">‹</button>
+  <div class="row between"><button class="btn ghost small round" data-action="day" data-d="-1" aria-label="Vortag">‹</button>
     <h1 style="margin:0;font-size:1.2rem;text-align:center">${isToday ? 'Heute · ' : ''}${fmtDate(curDate)}</h1>
-    <button class="btn ghost small" data-action="day" data-d="1" aria-label="Folgetag" ${isToday ? 'disabled' : ''}>›</button></div>
+    <button class="btn ghost small round" data-action="day" data-d="1" aria-label="Folgetag" ${isToday ? 'disabled' : ''}>›</button></div>
   ${!isToday ? '<p class="muted" style="text-align:center">Nachtrag für einen vergangenen Tag · <a href="#" data-action="gotoday">zu heute</a></p>' : ''}
-  <div style="margin-top:12px">${isToday ? bannersHTML() : ''}</div>
-  <div class="card">${status}</div>
+  ${isToday ? `<div style="margin-top:12px">${bannersHTML()}</div>` : ''}
+  <div class="card status-card">${status}</div>
+  ${segHTML(SECTIONS, section, 'section', e)}
+  <div id="pane" class="pane">${paneHTML()}</div>`;
+}
 
-  <div class="card"><h2 style="margin-top:0">Endometriose-Symptome</h2>
+function paneHTML() {
+  const e = getE();
+  const i = SECTIONS.findIndex(x => x.id === section);
+  const prev = SECTIONS[i - 1], next = SECTIONS[i + 1];
+  const meals = e.meals || [];
+  const body = {
+    sym: () => `<h2 class="sec-title">Endometriose-Symptome</h2>
     <h3>Schmerzen</h3>${scaleHTML('pain', 0, 10, e.pain, ['keine', 'unerträglich'], 'Schmerzen')}
     <h3>Wo?</h3>${multiChips('painAreas', PAIN_AREAS, e.painAreas)}
     <h3>Krämpfe</h3>${scaleHTML('cramps', 0, 10, e.cramps, ['keine', 'sehr stark'], 'Krämpfe')}
     <h3>Durchfall</h3><div class="chips">${DIARRHEA.map((l, i) => `<button class="chip ${e.diarrhea === i ? 'on' : ''}" aria-pressed="${e.diarrhea === i}" data-action="scale" data-k="diarrhea" data-v="${i}">${l}</button>`).join('')}</div>
-    <h3>Blutung</h3><div class="chips">${BLEEDING.map(([k, l]) => `<button class="chip ${e.bleeding === k ? 'on' : ''}" aria-pressed="${e.bleeding === k}" data-action="bleed" data-v="${k}">${l}</button>`).join('')}</div>
-  </div>
-
-  <div class="card"><h2 style="margin-top:0">Essenstagebuch</h2>
+    <h3>Blutung</h3><div class="chips">${BLEEDING.map(([k, l]) => `<button class="chip ${e.bleeding === k ? 'on' : ''}" aria-pressed="${e.bleeding === k}" data-action="bleed" data-k="bleeding" data-v="${k}">${l}</button>`).join('')}</div>`,
+    food: () => `<h2 class="sec-title">Essenstagebuch</h2>
     <p class="muted">Was gab es, wie viel und wann?</p>
-    ${meals.map((m, i) => `<div class="meal" data-meal="${i}">
-      <input type="time" data-f="meal-time" value="${esc(m.time)}" aria-label="Uhrzeit">
-      <select data-f="meal-amount" aria-label="Menge">${AMOUNTS.map(a => `<option ${m.amount === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
-      <button class="btn danger small" data-action="delmeal" data-i="${i}" aria-label="Mahlzeit löschen">✕</button>
-      <input type="text" data-f="meal-text" value="${esc(m.text)}" placeholder="z. B. Haferbrei mit Banane" aria-label="Was gab es?">
-    </div>`).join('')}
+    <div id="meals">${meals.map((m, i) => mealHTML(m, i)).join('')}</div>
     <button class="btn ghost small" data-action="addmeal">+ Mahlzeit</button>
-    <h3>Freitext zum Essen</h3><textarea data-f="foodNote" placeholder="Getränke, Zutaten, Beschwerden nach dem Essen …">${esc(e.foodNote || '')}</textarea>
-  </div>
-
-  <div class="card"><h2 style="margin-top:0">Emotionen</h2>
+    <h3>Freitext zum Essen</h3><textarea data-f="foodNote" placeholder="Getränke, Zutaten, Beschwerden nach dem Essen …">${esc(e.foodNote || '')}</textarea>`,
+    emo: () => `<h2 class="sec-title">Gefühle</h2>
     <h3>Laune</h3>${scaleHTML('mood', -5, 5, e.mood, ['sehr schlecht', 'sehr gut'], 'Laune von −5 bis +5')}
     <h3>Angst</h3>${scaleHTML('anxiety', 0, 5, e.anxiety, ['keine', 'sehr stark'], 'Angst')}
     <h3>Wut</h3>${scaleHTML('anger', 0, 5, e.anger, ['keine', 'sehr stark'], 'Wut')}
     <h3>Stress</h3>${scaleHTML('stress', 0, 5, e.stress, ['keiner', 'sehr stark'], 'Stress')}
-    <h3>Freitext</h3><textarea data-f="note" placeholder="Wie geht es dir heute? Was ist passiert?">${esc(e.note || '')}</textarea>
-  </div>
-
-  <div class="card"><h2 style="margin-top:0">Körper &amp; Medikamente</h2>
+    <h3>Freitext</h3><textarea data-f="note" placeholder="Wie geht es dir heute? Was ist passiert?">${esc(e.note || '')}</textarea>`,
+    body: () => `<h2 class="sec-title">Körper &amp; Medikamente</h2>
     <h3>Schlaf letzte Nacht</h3>${scaleHTML('sleep', 1, 5, e.sleep, ['sehr schlecht', 'sehr gut'], 'Schlaf')}
     <h3>Energie</h3>${scaleHTML('energy', 1, 5, e.energy, ['erschöpft', 'voller Energie'], 'Energie')}
     <h3>Schmerzmittel &amp; Hilfen</h3>${multiChips('meds', MEDS, e.meds)}
-    <input type="text" data-f="medsNote" value="${esc(e.medsNote || '')}" placeholder="Dosis, weitere Medikamente …" style="margin-top:8px" aria-label="Medikamente Notiz">
+    <input type="text" data-f="medsNote" value="${esc(e.medsNote || '')}" placeholder="Dosis, weitere Medikamente …" style="margin-top:8px" aria-label="Medikamente Notiz">`
+  }[section]();
+  return `<div class="card">${body}</div>
+  <div class="pane-nav">
+    ${prev ? `<button class="btn ghost" data-action="step" data-d="-1">‹ ${prev.label}</button>` : '<span></span>'}
+    ${next ? `<button class="btn" data-action="step" data-d="1">Weiter: ${next.label} ›</button>` : '<button class="btn" data-action="finish">Fertig ✓</button>'}
   </div>
-  <p class="muted">Änderungen werden automatisch gespeichert. Ein Feld nochmals antippen hebt die Auswahl auf.</p>`;
+  <p class="muted" style="text-align:center">Wird automatisch gespeichert · zum Wechseln seitlich wischen</p>`;
 }
+const mealHTML = (m, i) => `<div class="meal" data-meal="${i}">
+      <input type="time" data-f="meal-time" value="${esc(m.time)}" aria-label="Uhrzeit">
+      <select data-f="meal-amount" aria-label="Menge">${AMOUNTS.map(a => `<option ${m.amount === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
+      <button class="btn danger small" data-action="delmeal" data-i="${i}" aria-label="Mahlzeit löschen">✕</button>
+      <input type="text" data-f="meal-text" value="${esc(m.text)}" placeholder="z. B. Haferbrei mit Banane" aria-label="Was gab es?">
+    </div>`;
 
 function historyHTML() {
   const [y, m] = calMonth.split('-').map(Number);
@@ -207,7 +280,7 @@ function historyHTML() {
     const future = ds > todayStr();
     const dot = e && isBleed(e) ? '<span class="dot"></span>' : e && isSpot(e) ? '<span class="dot spot"></span>' : '';
     const ins = settings.inserts.includes(ds) ? '<span class="ins">↻</span>' : '';
-    cells += `<button data-action="open" data-d="${ds}" ${future ? 'disabled' : ''} class="${ds === todayStr() ? 'today' : ''} ${ph && ph.kind === 'pause' ? 'pausebg' : ''} ${hasData(e) ? 'logged' : ''}">${d}${ins}${dot}</button>`;
+    cells += `<button style="--d:${d}" data-action="open" data-d="${ds}" ${future ? 'disabled' : ''} class="${ds === todayStr() ? 'today' : ''} ${ph && ph.kind === 'pause' ? 'pausebg' : ''} ${hasData(e) ? 'logged' : ''}">${d}${ins}${dot}</button>`;
   }
   const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   return `<h1>Verlauf</h1>
@@ -265,7 +338,7 @@ function chartSVG(rows, series, minV, maxV, showBleed) {
   series.forEach(sr => {
     const pts = rows.filter(r => r.e[sr.key] != null);
     if (!pts.length) return;
-    s += `<polyline fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" ${sr.dash ? 'stroke-dasharray="5 3"' : ''} points="${pts.map(r => `${x(r.d).toFixed(1)},${y(r.e[sr.key]).toFixed(1)}`).join(' ')}"/>` +
+    s += `<polyline fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" ${sr.dash ? 'stroke-dasharray="5 3"' : 'pathLength="1" class="draw"'} points="${pts.map(r => `${x(r.d).toFixed(1)},${y(r.e[sr.key]).toFixed(1)}`).join(' ')}"/>` +
       pts.map(r => `<circle cx="${x(r.d).toFixed(1)}" cy="${y(r.e[sr.key]).toFixed(1)}" r="2.5" fill="${sr.color}"/>`).join('');
   });
   if (showBleed) rows.forEach(r => { if (isBleed(r.e) || isSpot(r.e)) s += `<circle cx="${x(r.d).toFixed(1)}" cy="${H - 10}" r="3.5" fill="${isBleed(r.e) ? 'var(--blood)' : 'none'}" stroke="var(--blood)" stroke-width="1.5"/>`; });
@@ -349,10 +422,21 @@ function topCounts(rows, key, exclude = []) {
 }
 
 function analysisHTML() {
+  return analysisParts().head + (analysisParts.cache.enough ? segHTML(ASECTIONS, aSection, 'section') + `<div id="pane" class="pane">${analysisPane()}</div>` : analysisParts.cache.body);
+}
+function analysisPane() { const p = analysisParts.cache; return p.parts[aSection] + p.footer; }
+// alles auf einmal (Bericht, Drucken)
+function analysisFull() { const p = analysisParts(); return p.head + (p.enough ? ASECTIONS.map(x => p.parts[x.id]).join('') + p.footer : p.body); }
+function analysisParts() {
+  const res = analysisData();
+  analysisParts.cache = res;
+  return res;
+}
+function analysisData() {
   const rows = loggedDays();
-  const periods = [['all', 'Gesamt'], ['ring', 'Aktueller Ring'], ['31', 'Letzte 31 Tage']];
-  const head1 = `<h1>Auswertung</h1><div class="chips noprint" style="margin-bottom:14px">${periods.map(([k, l]) => `<button class="chip ${period === k ? 'on' : ''}" aria-pressed="${period === k}" data-action="period" data-v="${k}">${l}</button>`).join('')}</div>`;
-  if (rows.length < 3) return `${head1}<div class="card"><p>Noch zu wenig Daten für diesen Zeitraum. Sobald ein paar Tage erfasst sind, erscheint hier die Auswertung.</p><p class="muted">Erfasste Tage: ${rows.length}</p></div>`;
+  const periods = [{ id: 'all', label: 'Gesamt' }, { id: 'ring', label: 'Aktueller Ring' }, { id: '31', label: 'Letzte 31 Tage' }];
+  const head1 = `<h1>Auswertung</h1>${segHTML(periods, period, 'period', null, 'static')}`;
+  if (rows.length < 3) return { head: head1, enough: false, body: `<div class="card"><p>Noch zu wenig Daten für diesen Zeitraum. Sobald ein paar Tage erfasst sind, erscheint hier die Auswertung.</p><p class="muted">Erfasste Tage: ${rows.length}</p></div>` };
   const tot = groupStats(rows);
   const first = rows[0].d, last = rows[rows.length - 1].d;
   const span = dayNum(last) - dayNum(first) + 1;
@@ -396,9 +480,9 @@ function analysisHTML() {
   const row = (name, g) => `<tr><td>${esc(name)}</td><td class="num">${g.n}</td><td class="num">${f1(g.pain)}</td><td class="num">${f1(g.cramps)}</td><td class="num">${pct(g.diar, g.n)}</td><td class="num">${pct(g.bleed, g.n)}</td><td class="num">${pct(g.spot, g.n)}</td><td class="num">${fs(g.mood)}</td><td class="num">${f1(g.stress)}</td><td class="num">${pct(g.meds, g.n)}</td></tr>`;
   const head = '<tr><th>&nbsp;</th><th class="num">Tage</th><th class="num">Ø Schm.</th><th class="num">Ø Kr.</th><th class="num">Durchf.</th><th class="num">Blut.</th><th class="num">Schmier</th><th class="num">Ø Laune</th><th class="num">Ø Stress</th><th class="num">Schmerzm.</th></tr>';
 
-  return `${head1}
-  <p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>
-  <div class="card"><div class="stats">
+  const card = (title, inner) => `<div class="card"><h2 style="margin-top:0">${title}</h2>${inner}</div>`;
+  const parts = {};
+  parts.overview = `<div class="card"><div class="stats">
     <div class="stat"><b>${f1(tot.pain)}</b>Ø Schmerz (0–10)</div>
     <div class="stat"><b>${f1(tot.cramps)}</b>Ø Krämpfe (0–10)</div>
     <div class="stat"><b>${pct(tot.bleed + tot.spot, tot.n)}</b>Tage mit Blutung oder Schmierblutung</div>
@@ -408,20 +492,21 @@ function analysisHTML() {
     <div class="stat"><b>${pct(tot.meds, tot.n)}</b>Tage mit Schmerzmitteln</div>
     <div class="stat"><b>${tot.n}</b>erfasste Tage</div>
   </div></div>
-  ${notes.length ? `<div class="card"><h2 style="margin-top:0">Auffälligkeiten</h2>${notes.map(n => `<div class="insight">${n}</div>`).join('')}</div>` : ''}
-  <div class="card"><h2 style="margin-top:0">Zusammenhänge: Essen, Emotionen &amp; Symptome</h2>
+  ${notes.length ? card('Auffälligkeiten', notes.map(n => `<div class="insight">${n}</div>`).join('')) : ''}`;
+  parts.links = `<div class="card"><h2 style="margin-top:0">Zusammenhänge: Essen, Gefühle &amp; Symptome</h2>
     ${links.length ? links.map(n => `<div class="insight">${n}</div>`).join('') : `<p class="muted">${rows.length < 10 ? 'Für Zusammenhänge braucht es etwa 10 erfasste Tage mit Essen und Emotionen.' : 'Bisher sind keine deutlichen Zusammenhänge erkennbar.'}</p>`}
-    <p class="muted">Berücksichtigt werden Essensbeschreibungen, Uhrzeit und Menge der Mahlzeiten, Freitexte, Emotionen, Schlaf und Energie, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>
-  <div class="card"><h2 style="margin-top:0">Symptome im Verlauf</h2>${chartSVG(rows, [{ key: 'pain', label: 'Schmerzen', color: 'var(--accent)' }, { key: 'cramps', label: 'Krämpfe', color: 'var(--warn)', dash: true }], 0, 10, true)}</div>
+    <p class="muted">Berücksichtigt werden Essensbeschreibungen, Uhrzeit und Menge der Mahlzeiten, Freitexte, Emotionen, Schlaf und Energie, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>`;
+  parts.charts = `<div class="card"><h2 style="margin-top:0">Symptome im Verlauf</h2>${chartSVG(rows, [{ key: 'pain', label: 'Schmerzen', color: 'var(--accent)' }, { key: 'cramps', label: 'Krämpfe', color: 'var(--warn)', dash: true }], 0, 10, true)}</div>
   <div class="card"><h2 style="margin-top:0">Laune im Verlauf</h2>${chartSVG(rows, [{ key: 'mood', label: 'Laune', color: 'var(--accent)' }], -5, 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Emotionen im Verlauf</h2>${chartSVG(rows, [{ key: 'stress', label: 'Stress', color: 'var(--accent)' }, { key: 'anxiety', label: 'Angst', color: 'var(--lilac)', dash: true }, { key: 'anger', label: 'Wut', color: 'var(--warn)' }], 0, 5, false)}</div>
-  <div class="card"><h2 style="margin-top:0">Schlaf &amp; Energie</h2>${chartSVG(rows, [{ key: 'sleep', label: 'Schlaf', color: 'var(--lilac)' }, { key: 'energy', label: 'Energie', color: 'var(--ok)', dash: true }], 1, 5, false)}</div>
-  <div class="card"><h2 style="margin-top:0">Nach Ring-Phase</h2><div class="table-wrap"><table>${head}${order.map(k => row(k, groupStats(groups[k]))).join('')}</table></div></div>
-  <div class="card"><h2 style="margin-top:0">Nach Ring</h2><div class="table-wrap"><table>${head}${Object.keys(cycles).map(c => row(`Ring ${c} (ab ${fmtShort(cycles[c][0].ph.start)})`, groupStats(cycles[c]))).join('')}</table></div></div>
-  <div class="card noprint"><h2 style="margin-top:0">Für die Ärztin</h2>
+  <div class="card"><h2 style="margin-top:0">Schlaf &amp; Energie</h2>${chartSVG(rows, [{ key: 'sleep', label: 'Schlaf', color: 'var(--lilac)' }, { key: 'energy', label: 'Energie', color: 'var(--ok)', dash: true }], 1, 5, false)}</div>`;
+  parts.tables = `<div class="card"><h2 style="margin-top:0">Nach Ring-Phase</h2><div class="table-wrap"><table>${head}${order.map(k => row(k, groupStats(groups[k]))).join('')}</table></div></div>
+  <div class="card"><h2 style="margin-top:0">Nach Ring</h2><div class="table-wrap"><table>${head}${Object.keys(cycles).map(c => row(`Ring ${c} (ab ${fmtShort(cycles[c][0].ph.start)})`, groupStats(cycles[c]))).join('')}</table></div></div>`;
+  const footer = `<div class="card noprint"><h2 style="margin-top:0">Für die Ärztin</h2>
     <div class="row wrap"><button class="btn" data-action="report">Bericht teilen</button><button class="btn ghost" data-action="print">Drucken / PDF</button><button class="btn ghost" data-action="csv">CSV</button></div>
     <p class="muted">„Bericht teilen“ erstellt eine Datei, die du per Mail oder Nachricht schicken oder in „Dateien“ sichern kannst.</p></div>
   <p class="notice">Diese Auswertung zeigt Muster in den eigenen Aufzeichnungen und ersetzt keine ärztliche Beratung. Für das Gespräch mit der Frauenärztin oder dem Frauenarzt ist sie eine gute Grundlage.</p>`;
+  return { head: `${head1}<p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>`, enough: true, parts, footer };
 }
 
 // ---------- Einstellungen ----------
@@ -477,7 +562,8 @@ function csv() {
   share(`ringtagebuch-${todayStr()}.csv`, '﻿' + [hdr.map(q).join(';'), ...lines].join('\r\n'), 'text/csv');
 }
 function report() {
-  const clone = view.cloneNode(true);
+  const clone = document.createElement('div');
+  clone.innerHTML = analysisFull();
   clone.querySelectorAll('.noprint').forEach(n => n.remove());
   const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ringtagebuch – Bericht ${todayStr()}</title><style>${CSS_TEXT}body{padding-bottom:24px}</style></head>
@@ -519,41 +605,62 @@ view.addEventListener('click', ev => {
     case 'start': {
       const date = $('ob-date').value || todayStr();
       settings = { inserts: [date > todayStr() ? todayStr() : date], wearDays: +$('ob-wear').value, pauseDays: +$('ob-pause').value };
-      saveSettings(); curDate = todayStr(); tab = 'today'; break;
+      saveSettings(); curDate = todayStr(); tab = 'today'; render(true); return;
     }
-    case 'scale': { const cur = getE()[d.k]; patch({ [d.k]: cur === +d.v ? null : +d.v }); break; }
-    case 'bleed': patch({ bleeding: getE().bleeding === d.v ? null : d.v }); break;
+    case 'scale': { const cur = getE()[d.k]; patch({ [d.k]: cur === +d.v ? null : +d.v }); refreshGroup(el); return; }
+    case 'bleed': patch({ bleeding: getE().bleeding === d.v ? null : d.v }); refreshGroup(el); return;
     case 'toggle': {
       const cur = getE()[d.k] || [];
-      patch({ [d.k]: cur.includes(d.v) ? cur.filter(x => x !== d.v) : [...cur, d.v] }); break;
+      patch({ [d.k]: cur.includes(d.v) ? cur.filter(x => x !== d.v) : [...cur, d.v] }); refreshGroup(el); return;
     }
-    case 'day': { const n = addDays(curDate, +d.d); if (n <= todayStr()) curDate = n; break; }
-    case 'gotoday': curDate = todayStr(); break;
-    case 'open': curDate = d.d; tab = 'today'; window.scrollTo(0, 0); break;
+    case 'section': switchTo(d.v); return;
+    case 'step': step(+d.d); return;
+    case 'finish': {
+      const open = SECTIONS.filter(x => !secDone(x, getE())).map(x => x.label);
+      toast(open.length ? `Gespeichert · noch offen: ${open.join(', ')}` : 'Für heute alles erfasst ✓');
+      return;
+    }
+    case 'day': { const n = addDays(curDate, +d.d); if (n <= todayStr()) curDate = n; render(true); return; }
+    case 'gotoday': curDate = todayStr(); render(true); return;
+    case 'open': curDate = d.d; tab = 'today'; window.scrollTo(0, 0); render(true); return;
     case 'month': { const [y, m] = calMonth.split('-').map(Number); calMonth = new Date(Date.UTC(y, m - 1 + +d.d, 1)).toISOString().slice(0, 7); break; }
     case 'period': period = d.v; break;
     case 'addmeal': {
       const now = new Date();
       const time = curDate === todayStr() ? `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` : '12:00';
-      patch({ meals: [...(getE().meals || []), { time, text: '', amount: 'normal' }] }); break;
+      const meals = [...(getE().meals || []), { time, text: '', amount: 'normal' }];
+      patch({ meals });
+      const box = document.getElementById('meals');
+      box.insertAdjacentHTML('beforeend', mealHTML(meals[meals.length - 1], meals.length - 1));
+      box.lastElementChild.classList.add('appear');
+      box.lastElementChild.querySelector('[data-f=meal-text]').focus();
+      return;
     }
-    case 'delmeal': { const m = [...(getE().meals || [])]; m.splice(+d.i, 1); patch({ meals: m }); break; }
+    case 'delmeal': {
+      const m = [...(getE().meals || [])]; m.splice(+d.i, 1); patch({ meals: m }); updateDots();
+      const row = el.closest('.meal'); row.classList.add('leave');
+      setTimeout(() => { document.getElementById('meals').innerHTML = m.map((x, i) => mealHTML(x, i)).join(''); }, 260);
+      return;
+    }
     case 'newring': {
       const t = todayStr();
       if (settings.inserts.includes(t)) break;
       if (!d.due && !confirm('Heute einen neuen Ring eingesetzt? Der Ring-Zähler beginnt dann wieder bei Tag 1.')) return;
       settings.inserts.push(t); saveSettings();
       flash = 'Neuer Ring eingetragen. Tag 1 beginnt heute.' + (d.due ? '' : ' Lade unter „Mehr“ die Kalender-Erinnerungen neu, damit sie zum neuen Termin passen.');
-      break;
+      render(true); toast('Neuer Ring ✓'); return;
     }
     case 'saverhythm': {
       const w = Math.min(60, Math.max(1, Math.round(+$('s-wear').value) || 28));
       const p = Math.min(14, Math.max(0, Math.round(+$('s-pause').value) || 0));
-      settings.wearDays = w; settings.pauseDays = p; saveSettings(); break;
+      settings.wearDays = w; settings.pauseDays = p; saveSettings(); toast('Gespeichert ✓'); break;
     }
     case 'addinsert': { const v = $('s-newins').value; if (v && v <= todayStr() && !settings.inserts.includes(v)) { settings.inserts.push(v); saveSettings(); } break; }
     case 'delinsert': if (!confirm(`Ringwechsel vom ${fmtDate(d.d)} löschen?`)) return; settings.inserts = settings.inserts.filter(x => x !== d.d); saveSettings(); break;
-    case 'print': window.print(); return;
+    case 'print':
+      view.innerHTML = analysisFull();
+      window.addEventListener('afterprint', () => render(), { once: true });
+      setTimeout(() => window.print(), 50); return;
     case 'report': report(); return;
     case 'csv': csv(); return;
     case 'ics': ics(); return;
@@ -564,21 +671,47 @@ view.addEventListener('click', ev => {
     case 'reset':
       if (!confirm('Wirklich ALLE Tagebuchdaten löschen? Das kann nicht rückgängig gemacht werden. Tipp: vorher ein Backup erstellen.')) return;
       Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-      settings = null; entries = {}; break;
+      settings = null; entries = {}; render(true); return;
   }
   render();
 });
 
+// Nur die angetippte Gruppe aktualisieren – kein Flackern, die Auswahl „ploppt“
+function refreshGroup(el) {
+  const e = getE(), k = el.dataset.k;
+  el.parentElement.querySelectorAll('[data-action]').forEach(b => {
+    const v = b.dataset.v;
+    const on = b.dataset.action === 'toggle' ? (e[k] || []).includes(v) : b.dataset.action === 'bleed' ? e.bleeding === v : e[k] === +v;
+    b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+  });
+  if (el.classList.contains('on')) replay(el, 'pop');
+  updateDots();
+}
+
+// Wischen zwischen den Reitern
+let touch = null;
+view.addEventListener('touchstart', ev => {
+  touch = ev.target.closest('#pane') && !ev.target.closest('input, textarea, select, .table-wrap, svg') ? { x: ev.touches[0].clientX, y: ev.touches[0].clientY } : null;
+}, { passive: true });
+view.addEventListener('touchend', ev => {
+  if (!touch) return;
+  const dx = ev.changedTouches[0].clientX - touch.x, dy = ev.changedTouches[0].clientY - touch.y;
+  touch = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+}, { passive: true });
+// iOS zeigt :active (Knopf gibt nach) nur mit einem touchstart-Empfänger
+document.addEventListener('touchstart', () => {}, { passive: true });
+
 view.addEventListener('input', ev => {
   const el = ev.target, f = el.dataset.f;
   if (!f) return;
-  if (['note', 'foodNote', 'medsNote'].includes(f)) return patch({ [f]: el.value });
+  if (['note', 'foodNote', 'medsNote'].includes(f)) { patch({ [f]: el.value }); updateDots(); return; }
   const row = el.closest('[data-meal]');
   if (!row) return;
   const i = +row.dataset.meal;
   const meals = [...(getE().meals || [])];
   meals[i] = { ...meals[i], [f.replace('meal-', '')]: el.value };
-  patch({ meals });
+  patch({ meals }); updateDots();
 });
 
 view.addEventListener('change', ev => {
@@ -602,7 +735,7 @@ document.getElementById('tabs').addEventListener('click', ev => {
   if (!b) return;
   tab = b.dataset.tab;
   if (tab === 'today') curDate = todayStr();
-  render(); window.scrollTo(0, 0);
+  window.scrollTo(0, 0); render(true);
 });
 
 // Tageswechsel, während die App offen bleibt (z. B. über Nacht im Hintergrund)
@@ -610,10 +743,10 @@ let lastSeen = todayStr();
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && todayStr() !== lastSeen) {
     if (curDate === lastSeen) curDate = todayStr();
-    lastSeen = todayStr(); render();
+    lastSeen = todayStr(); render(true);
   }
 });
 
-render();
+render(true);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 navigator.storage?.persist?.();
