@@ -1,4 +1,2 @@
-Updates kommen jetzt von selbst: Öffnest du die App, lädt sie automatisch die neueste Version.
-Nach einem Update zeigt dir dieses Fenster kurz, was neu ist.
-„Mit KI auswerten“ (unter Auswertung): fertiger Auftrag mit allen Tagesdaten für ChatGPT, Claude & Co.
-Die Auswertung zeigt jetzt standardmäßig den aktuellen Monat, mit Vor- und Zurückblättern.
+Symptome haben jetzt ein eigenes Freitextfeld: Wie fühlte sich der Schmerz an, wann kam er, was war anders?
+Die Notizen fließen in die KI-Auswertung, den Bericht und die CSV ein. Die Auswertung zeigt außerdem, welche Beschreibungen sich häufen.
