@@ -43,7 +43,7 @@ const AMOUNTS = ['wenig', 'normal', 'viel'];
 const isBleed = e => ['light', 'medium', 'heavy'].includes(e.bleeding);
 const isSpot = e => e.bleeding === 'spotting';
 const hasData = e => e && (e.pain != null || e.cramps != null || e.diarrhea != null || e.bleeding || e.anxiety != null ||
-  e.anger != null || e.stress != null || (e.note || '').trim() || (e.meals || []).some(m => m.text.trim()));
+  e.anger != null || e.stress != null || (e.note || '').trim() || (e.foodNote || '').trim() || (e.meals || []).some(m => m.text.trim()));
 
 let tab = 'today';
 let curDate = todayStr();
@@ -116,7 +116,7 @@ function todayHTML() {
   const meals = e.meals || [];
   return `
   <div class="row between"><button class="btn ghost small" data-action="day" data-d="-1" aria-label="Vortag">‹</button>
-    <h1 style="margin:0">${isToday ? 'Heute' : ''} ${fmtDate(curDate)}</h1>
+    <h1 style="margin:0;font-size:1.2rem;text-align:center">${isToday ? 'Heute · ' : ''}${fmtDate(curDate)}</h1>
     <button class="btn ghost small" data-action="day" data-d="1" aria-label="Folgetag" ${isToday ? 'disabled' : ''}>›</button></div>
   ${isToday ? reminderBanner() : ''}
   <div class="card" style="margin-top:12px">${status}</div>
@@ -136,6 +136,7 @@ function todayHTML() {
       <select data-f="meal-amount" style="width:auto">${AMOUNTS.map(a => `<option ${m.amount === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
       <button class="btn danger small" data-action="delmeal" data-i="${i}" aria-label="Mahlzeit löschen">✕</button></div>`).join('')}
     <button class="btn ghost small" data-action="addmeal">+ Mahlzeit</button>
+    <h3>Freitext zum Essen</h3><textarea data-f="foodNote" placeholder="Getränke, Zutaten, Beschwerden nach dem Essen …">${esc(e.foodNote || '')}</textarea>
   </div>
 
   <div class="card"><h2 style="margin-top:0">Emotionen</h2>
@@ -192,50 +193,77 @@ function groupStats(rows) {
   };
 }
 
-function chartSVG(rows) {
+function chartSVG(rows, series, maxV, showBleed) {
   if (rows.length < 2) return '<p class="muted">Für das Diagramm werden mindestens 2 erfasste Tage benötigt.</p>';
   const W = 600, H = 200, L = 28, R = 8, T = 10, B = 24;
   const d0 = dayNum(rows[0].d), d1 = dayNum(rows[rows.length - 1].d);
   const span = Math.max(1, d1 - d0);
   const x = d => L + (dayNum(d) - d0) / span * (W - L - R);
-  const y = v => T + (1 - v / 10) * (H - T - B);
+  const y = v => T + (1 - v / maxV) * (H - T - B);
   const bw = (W - L - R) / (span + 1);
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Schmerz- und Krampfverlauf">`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Verlauf">`;
   for (let i = d0; i <= d1; i++) {
     const ph = phaseOf(fromNum(i));
-    if (ph && ph.kind === 'pause') s += `<rect x="${x(fromNum(i)) - bw / 2}" y="${T}" width="${bw}" height="${H - T - B}" fill="var(--ok)" opacity=".15"/>`;
+    if (ph && ph.kind === 'pause') s += `<rect x="${x(fromNum(i)) - bw / 2}" y="${T}" width="${bw}" height="${H - T - B}" fill="var(--ok)" opacity=".18"/>`;
   }
-  for (let v = 0; v <= 10; v += 5) s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="4" y="${y(v) + 3}">${v}</text>`;
-  const line = (key, color, dash) => {
-    const pts = rows.filter(r => r.e[key] != null);
-    if (!pts.length) return '';
-    return `<polyline fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5 3"' : ''} points="${pts.map(r => `${x(r.d).toFixed(1)},${y(r.e[key]).toFixed(1)}`).join(' ')}"/>` +
-      pts.map(r => `<circle cx="${x(r.d).toFixed(1)}" cy="${y(r.e[key]).toFixed(1)}" r="2.5" fill="${color}"/>`).join('');
-  };
-  s += line('pain', 'var(--accent)') + line('cramps', 'var(--warn)', true);
-  rows.forEach(r => { if (isBleed(r.e) || isSpot(r.e)) s += `<circle cx="${x(r.d).toFixed(1)}" cy="${H - 10}" r="3.5" fill="${isBleed(r.e) ? 'var(--blood)' : 'none'}" stroke="var(--blood)" stroke-width="1.5"/>`; });
+  [0, maxV / 2, maxV].forEach(v => s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="4" y="${y(v) + 3}">${v}</text>`);
+  series.forEach(sr => {
+    const pts = rows.filter(r => r.e[sr.key] != null);
+    if (!pts.length) return;
+    s += `<polyline fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" ${sr.dash ? 'stroke-dasharray="5 3"' : ''} points="${pts.map(r => `${x(r.d).toFixed(1)},${y(r.e[sr.key]).toFixed(1)}`).join(' ')}"/>` +
+      pts.map(r => `<circle cx="${x(r.d).toFixed(1)}" cy="${y(r.e[sr.key]).toFixed(1)}" r="2.5" fill="${sr.color}"/>`).join('');
+  });
+  if (showBleed) rows.forEach(r => { if (isBleed(r.e) || isSpot(r.e)) s += `<circle cx="${x(r.d).toFixed(1)}" cy="${H - 10}" r="3.5" fill="${isBleed(r.e) ? 'var(--blood)' : 'none'}" stroke="var(--blood)" stroke-width="1.5"/>`; });
   [rows[0].d, rows[Math.floor(rows.length / 2)].d, rows[rows.length - 1].d].forEach(d => s += `<text x="${x(d)}" y="${H - 1}" text-anchor="middle">${fmtShort(d)}</text>`);
-  return s + '</svg>' +
-    '<div class="legend"><span style="color:var(--accent)">━ Schmerzen</span><span style="color:var(--warn)">╌ Krämpfe</span><span style="color:var(--blood)">● Blutung ○ Schmier</span><span style="color:var(--ok)">▮ Ringpause</span></div>';
+  return s + '</svg><div class="legend">' + series.map(sr => `<span style="color:${sr.color}">${sr.dash ? '╌' : '━'} ${sr.label}</span>`).join('') +
+    (showBleed ? '<span style="color:var(--blood)">● Blutung ○ Schmier</span>' : '') + '<span style="color:var(--ok)">▮ Ringpause</span></div>';
 }
 
-const STOP = new Set(['mit', 'und', 'oder', 'etwas', 'wenig', 'viel', 'ohne', 'dazu', 'eine', 'einen', 'einer', 'dem', 'den', 'der', 'die', 'das', 'sowie', 'noch', 'auch', 'kleine', 'kleiner', 'großes', 'groß']);
-function foodInsights(rows) {
-  const score = r => Math.max(r.e.pain ?? 0, r.e.cramps ?? 0, (r.e.diarrhea ?? 0) * 3);
+const STOP = new Set(['mit', 'und', 'oder', 'etwas', 'wenig', 'viel', 'ohne', 'dazu', 'eine', 'einen', 'einer', 'dem', 'den', 'der', 'die', 'das', 'sowie', 'noch', 'auch', 'kleine', 'kleiner', 'groß', 'heute', 'gestern', 'habe', 'hatte', 'waren', 'wurde', 'sehr', 'dann', 'aber', 'nach', 'nicht', 'ganz', 'dass', 'weil', 'mehr']);
+
+// Zusammenhänge zwischen Essen, Emotionen und Symptomen (selber oder nächster Tag)
+function correlationNotes(rows) {
   const byDate = Object.fromEntries(rows.map(r => [r.d, r]));
-  const day = r => { const nx = byDate[addDays(r.d, 1)]; return nx ? (score(r) + score(nx)) / 2 : score(r); };
-  const all = rows.filter(r => (r.e.meals || []).some(m => m.text.trim()));
-  if (all.length < 7) return null;
-  const overall = avg(all.map(day));
-  const map = {};
-  all.forEach(r => {
-    const words = new Set((r.e.meals || []).flatMap(m => m.text.toLowerCase().match(/[a-zäöüß]{4,}/g) || []).filter(w => !STOP.has(w)));
-    words.forEach(w => (map[w] ||= []).push(day(r)));
-  });
-  return Object.entries(map).filter(([, v]) => v.length >= 3)
-    .map(([w, v]) => ({ w, n: v.length, m: avg(v), diff: avg(v) - overall }))
-    .filter(x => x.diff >= 1).sort((a, b) => b.diff - a.diff).slice(0, 5)
-    .map(x => ({ ...x, overall }));
+  const strong = r => Math.max(r.e.pain ?? 0, r.e.cramps ?? 0) >= 6;
+  const diar = r => (r.e.diarrhea ?? 0) >= 1;
+  const outcomes = [['starke Schmerzen oder Krämpfe', strong], ['Durchfall', diar]];
+  const near = (r, f) => { const nx = byDate[addDays(r.d, 1)]; return f(r) || (!!nx && f(nx)); };
+  const out = [];
+  const sources = [
+    ['Essen', r => [...(r.e.meals || []).map(m => m.text), r.e.foodNote].join(' ')],
+    ['Tagebuchtext', r => r.e.note || '']
+  ];
+  for (const [name, getText] of sources) {
+    const withText = rows.filter(r => getText(r).trim());
+    if (withText.length < 7) continue;
+    const map = {};
+    withText.forEach(r => new Set((getText(r).toLowerCase().match(/[a-zäöüß]{4,}/g) || []).filter(w => !STOP.has(w))).forEach(w => (map[w] ||= []).push(r)));
+    for (const [label, f] of outcomes) {
+      const base = withText.filter(r => near(r, f)).length / withText.length;
+      const groups = {};
+      Object.entries(map).filter(([, v]) => v.length >= 3)
+        .map(([w, v]) => ({ w, n: v.length, key: v.map(r => r.d).join(), rate: v.filter(r => near(r, f)).length / v.length }))
+        .filter(x => x.rate >= 0.5 && x.rate - base >= 0.25)
+        .forEach(x => (groups[x.key] ||= { ...x, words: [] }).words.push(x.w));
+      Object.values(groups).sort((a, b) => b.rate - a.rate).slice(0, 3).forEach(x =>
+        out.push(`${name}: ${x.words.slice(0, 4).map(w => `„<b>${esc(w)}</b>“`).join(', ')} kam${x.words.length > 1 ? 'en' : ''} an ${x.n} Tagen vor. Am selben oder nächsten Tag gab es dann in ${Math.round(x.rate * 100)} % der Fälle ${label} (sonst ${Math.round(base * 100)} %).`));
+    }
+  }
+  for (const [name, k] of [['Stress', 'stress'], ['Angst', 'anxiety'], ['Wut', 'anger']]) {
+    const have = rows.filter(r => r.e[k] != null);
+    const hi = have.filter(r => r.e[k] >= 3), lo = have.filter(r => r.e[k] < 3);
+    if (have.length < 7 || hi.length < 3 || lo.length < 3) continue;
+    for (const [label, f] of outcomes) {
+      const a = hi.filter(r => near(r, f)).length / hi.length, b = lo.filter(r => near(r, f)).length / lo.length;
+      if (a - b >= 0.2) out.push(`Nach Tagen mit hohem ${name} (≥ 3) gab es in ${Math.round(a * 100)} % der Fälle ${label}, sonst in ${Math.round(b * 100)} %.`);
+    }
+    const sR = have.filter(strong), oR = have.filter(r => !strong(r));
+    if (sR.length >= 3 && oR.length >= 3) {
+      const a = avg(sR.map(r => r.e[k])), b = avg(oR.map(r => r.e[k]));
+      if (a - b >= 0.7) out.push(`An Tagen mit starken Beschwerden war ${name} höher (Ø ${f1(a)} statt ${f1(b)}). Körper und Gefühle beeinflussen sich vermutlich gegenseitig.`);
+    }
+  }
+  return out;
 }
 
 function analysisHTML() {
@@ -267,14 +295,7 @@ function analysisHTML() {
   }
   const spotRing = ringRows.filter(r => isSpot(r.e) || isBleed(r.e)).length;
   if (ringRows.length) notes.push(`An ${spotRing} von ${ringRows.length} Tagen mit Ring gab es Blutungen oder Schmierblutungen (${pct(spotRing, ringRows.length)}).`);
-  const food = foodInsights(rows);
-  if (food && food.length) notes.push('Auffällige Lebensmittel (Symptome am selben oder Folgetag höher als sonst): ' +
-    food.map(x => `<b>${esc(x.w)}</b> (${x.n}× · Ø ${f1(x.m)} vs. ${f1(x.overall)})`).join(', ') + '. Das ist nur ein Muster in den Daten, kein Beweis für einen Zusammenhang.');
-  const emo = rows.filter(r => r.e.stress != null && r.e.pain != null);
-  if (emo.length >= 7) {
-    const hi = emo.filter(r => r.e.stress >= 3), lo = emo.filter(r => r.e.stress < 3);
-    if (hi.length >= 3 && lo.length >= 3) notes.push(`An Tagen mit hohem Stress (≥ 3) lagen die Schmerzen bei Ø ${f1(avg(hi.map(r => r.e.pain)))}, sonst bei Ø ${f1(avg(lo.map(r => r.e.pain)))}.`);
-  }
+  const links = correlationNotes(rows);
 
   const row = (name, g) => `<tr><td>${esc(name)}</td><td class="num">${g.n}</td><td class="num">${f1(g.pain)}</td><td class="num">${f1(g.cramps)}</td><td class="num">${pct(g.diar, g.n)}</td><td class="num">${pct(g.bleed, g.n)}</td><td class="num">${pct(g.spot, g.n)}</td><td class="num">${f1(g.stress)}</td></tr>`;
   const head = '<tr><th>&nbsp;</th><th class="num">Tage</th><th class="num">Ø Schm.</th><th class="num">Ø Kr.</th><th class="num">Durchf.</th><th class="num">Blut.</th><th class="num">Schmier</th><th class="num">Ø Stress</th></tr>';
@@ -287,7 +308,11 @@ function analysisHTML() {
     <div class="stat"><b>${pct(tot.diar, tot.n)}</b>Tage mit Durchfall</div>
   </div></div>
   ${notes.length ? `<div class="card"><h2 style="margin-top:0">Auffälligkeiten</h2>${notes.map(n => `<div class="insight">${n}</div>`).join('')}</div>` : ''}
-  <div class="card"><h2 style="margin-top:0">Verlauf</h2>${chartSVG(rows)}</div>
+  <div class="card"><h2 style="margin-top:0">Zusammenhänge: Essen, Emotionen &amp; Symptome</h2>
+    ${links.length ? links.map(n => `<div class="insight">${n}</div>`).join('') : `<p class="muted">${rows.length < 10 ? 'Für Zusammenhänge braucht es etwa 10 erfasste Tage, mit Essen und Emotionen.' : 'Bisher sind keine deutlichen Zusammenhänge erkennbar.'}</p>`}
+    <p class="muted">Berücksichtigt werden Essensbeschreibungen, Freitexte und Emotionswerte, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>
+  <div class="card"><h2 style="margin-top:0">Symptome im Verlauf</h2>${chartSVG(rows, [{ key: 'pain', label: 'Schmerzen', color: 'var(--accent)' }, { key: 'cramps', label: 'Krämpfe', color: 'var(--warn)', dash: true }], 10, true)}</div>
+  <div class="card"><h2 style="margin-top:0">Emotionen im Verlauf</h2>${chartSVG(rows, [{ key: 'stress', label: 'Stress', color: 'var(--accent)' }, { key: 'anxiety', label: 'Angst', color: 'var(--lilac)', dash: true }, { key: 'anger', label: 'Wut', color: 'var(--warn)' }], 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Nach Ring-Phase</h2><div class="table-wrap"><table>${head}${order.map(k => row(k, groupStats(groups[k]))).join('')}</table></div></div>
   <div class="card"><h2 style="margin-top:0">Nach Ring-Zyklus</h2><div class="table-wrap"><table>${head}${Object.keys(cycles).map(c => row(`Zyklus ${c} (ab ${fmtShort(cycles[c][0].ph.start)})`, groupStats(cycles[c]))).join('')}</table></div></div>
   <div class="card noprint"><button class="btn" data-action="print">Als PDF drucken / speichern</button> <button class="btn ghost" data-action="csv">CSV exportieren</button></div>
@@ -297,7 +322,9 @@ function analysisHTML() {
 // ---------- Einstellungen ----------
 function settingsHTML() {
   const ins = [...settings.inserts].sort();
+  const ios = /iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone;
   return `<h1>Einstellungen</h1>
+  ${ios ? '<div class="card"><h2 style="margin-top:0">Auf dem iPhone installieren</h2><p class="muted">In Safari auf <b>Teilen</b> tippen, dann <b>Zum Home-Bildschirm</b>. Nur so bleiben die Daten dauerhaft gespeichert und die App öffnet sich im Vollbild.</p></div>' : ''}
   <div class="card"><h2 style="margin-top:0">Ring-Rhythmus</h2>
     <label>Tage mit Ring</label><input type="number" id="s-wear" min="1" max="60" value="${settings.wearDays}">
     <label>Ringpause (Tage, 0 = durchgehend)</label><input type="number" id="s-pause" min="0" max="14" value="${settings.pauseDays}">
@@ -307,7 +334,7 @@ function settingsHTML() {
     <div class="row"><input type="date" id="s-newins" value="${todayStr()}"><button class="btn ghost small" data-action="addinsert">Hinzufügen</button></div>
   </div>
   <div class="card"><h2 style="margin-top:0">Erinnerung zum Ringwechsel</h2>
-    <p class="muted">Am Entfern- und Einsetztag erscheint ein Hinweis in der App. Für echte Benachrichtigungen, 2× täglich (8:00 und 20:00 Uhr), lädst du einen Kalendertermin-Export herunter und öffnest ihn im Handy-Kalender.</p>
+    <p class="muted">Am Entfern- und Einsetztag erscheint ein Hinweis in der App. Für echte Benachrichtigungen, 2× täglich (8:00 und 20:00 Uhr), erzeugst du einen Kalendertermin-Export und fügst ihn über „Teilen“ → „Kalender“ hinzu.</p>
     <button class="btn" data-action="ics">Kalender-Erinnerungen laden (.ics)</button></div>
   <div class="card"><h2 style="margin-top:0">Daten</h2>
     <div class="row wrap"><button class="btn ghost small" data-action="backup">Backup (JSON)</button>
@@ -318,17 +345,21 @@ function settingsHTML() {
 }
 
 // ---------- Export ----------
-function download(name, text, type) {
+async function download(name, text, type) {
+  const file = new File([text], name, { type });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.href = URL.createObjectURL(file);
   a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 function csv() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const hdr = ['Datum', 'Phase', 'Ringtag', 'Schmerzen', 'Kraempfe', 'Durchfall', 'Blutung', 'Angst', 'Wut', 'Stress', 'Essen', 'Notiz'];
+  const hdr = ['Datum', 'Phase', 'Ringtag', 'Schmerzen', 'Kraempfe', 'Durchfall', 'Blutung', 'Angst', 'Wut', 'Stress', 'Essen', 'Essen-Freitext', 'Notiz'];
   const lines = loggedDays().map(({ d, e, ph }) => [d, phaseLabel(ph), ph?.day, e.pain, e.cramps, e.diarrhea, e.bleeding, e.anxiety, e.anger, e.stress,
-    (e.meals || []).filter(m => m.text.trim()).map(m => `${m.time} ${m.text} (${m.amount})`).join('; '), e.note].map(q).join(','));
+    (e.meals || []).filter(m => m.text.trim()).map(m => `${m.time} ${m.text} (${m.amount})`).join('; '), e.foodNote, e.note].map(q).join(','));
   download('ringtagebuch.csv', '﻿' + [hdr.join(','), ...lines].join('\n'), 'text/csv');
 }
 function ics() {
@@ -390,7 +421,7 @@ view.addEventListener('click', ev => {
 view.addEventListener('input', ev => {
   const el = ev.target, f = el.dataset.f;
   if (!f) return;
-  if (f === 'note') return patch({ note: el.value });
+  if (f === 'note' || f === 'foodNote') return patch({ [f]: el.value });
   const i = +el.closest('[data-meal]').dataset.meal;
   const meals = [...(getE().meals || [])];
   meals[i] = { ...meals[i], [f.replace('meal-', '')]: el.value };
@@ -418,3 +449,5 @@ document.getElementById('tabs').addEventListener('click', ev => {
 
 render();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+navigator.storage?.persist?.();
