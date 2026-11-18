@@ -1,6 +1,6 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.1.1'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.1.2'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
 const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
@@ -517,7 +517,7 @@ function settingsHTML() {
   return `<h1>Mehr</h1>
   ${ios ? '<div class="card"><h2 style="margin-top:0">Auf dem iPhone installieren</h2><p class="muted">In Safari auf <b>Teilen</b> tippen, dann auf <b>Zum Home-Bildschirm</b>. Nur so bleiben die Daten dauerhaft gespeichert und die App öffnet sich im Vollbild.</p></div>' : ''}
   <div class="card"><h2 style="margin-top:0">Erinnerungen</h2>
-    <p class="muted">Kalendertermine mit Hinweis landen im iPhone-Kalender und erinnern auch, wenn die App geschlossen ist. Nach dem Tippen im Teilen-Menü „Kalender“ wählen.</p>
+    <p class="muted">Kalendertermine mit Hinweis landen im iPhone-Kalender und erinnern auch, wenn die App geschlossen ist. Nach dem Tippen erscheint die Kalender-Vorschau: „Alle hinzufügen“ wählen.</p>
     <p><button class="btn" data-action="ics">Ringwechsel: 2× am Tag erinnern</button></p>
     <p class="muted">Erinnert am Wechseltag um 8:00 und 20:00 Uhr, für die nächsten 12 Ringe. Wenn der Wechsel einmal an einem anderen Tag war, hier neu laden.</p>
     <p><button class="btn ghost" data-action="icsdiary">Täglich um 20:30 ans Tagebuch erinnern</button></p>
@@ -570,6 +570,11 @@ function report() {
 <body><main><p class="muted">Ringtagebuch · Bericht erstellt am ${fmtDate(todayStr())} · Ring-Rhythmus: ${settings.wearDays} Tage${settings.pauseDays ? `, ${settings.pauseDays} Tage Pause` : ', durchgehend'}</p>${clone.innerHTML}</main></body></html>`;
   share(`ringtagebuch-bericht-${todayStr()}.html`, html, 'text/html');
 }
+// Kalendertermine: auf dem iPhone direkt öffnen, dann zeigt iOS die Kalender-Vorschau mit „Alle hinzufügen“
+function openCalendar(name, text) {
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) { location.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(text); return; }
+  share(name, text, 'text/calendar');
+}
 const icsStamp = () => new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
 const icsWrap = ev => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ringtagebuch//DE', 'CALSCALE:GREGORIAN', ...ev, 'END:VCALENDAR'].join('\r\n');
 const icsAlarm = t => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${t}`, 'TRIGGER:PT0M', 'END:VALARM'];
@@ -584,14 +589,14 @@ function ics() {
     add(addDays(s, w + p), p > 0 ? 'Neuen Ring einsetzen' : 'Ring wechseln');
   }
   const stamp = icsStamp();
-  share('ringwechsel.ics', icsWrap(events.filter(e => e.date >= todayStr()).flatMap(e => [
+  openCalendar('ringwechsel.ics', icsWrap(events.filter(e => e.date >= todayStr()).flatMap(e => [
     'BEGIN:VEVENT', `UID:ring-${e.date}-${e.t}@ringtagebuch`, `DTSTAMP:${stamp}`,
-    `DTSTART:${e.date.replace(/-/g, '')}T${e.t}00`, 'DURATION:PT15M', `SUMMARY:${e.title}`, ...icsAlarm(e.title), 'END:VEVENT'])), 'text/calendar');
+    `DTSTART:${e.date.replace(/-/g, '')}T${e.t}00`, 'DURATION:PT15M', `SUMMARY:${e.title}`, ...icsAlarm(e.title), 'END:VEVENT'])));
 }
 function icsDiary() {
-  share('tagebuch-erinnerung.ics', icsWrap(['BEGIN:VEVENT', 'UID:diary-daily@ringtagebuch', `DTSTAMP:${icsStamp()}`,
+  openCalendar('tagebuch-erinnerung.ics', icsWrap(['BEGIN:VEVENT', 'UID:diary-daily@ringtagebuch', `DTSTAMP:${icsStamp()}`,
     `DTSTART:${todayStr().replace(/-/g, '')}T203000`, 'DURATION:PT10M', 'RRULE:FREQ=DAILY', 'SUMMARY:Ringtagebuch ausfüllen',
-    ...icsAlarm('Ringtagebuch ausfüllen'), 'END:VEVENT']), 'text/calendar');
+    ...icsAlarm('Ringtagebuch ausfüllen'), 'END:VEVENT']));
 }
 
 // ---------- Events ----------
