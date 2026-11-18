@@ -1,6 +1,6 @@
 #!/bin/sh
 # Baut das Synology-Paket nach ausgabe/ und prüft es (Prüfsumme, Inhalt = Projektdateien, JSON gültig).
-#   1. Versionsnummer in VERSION erhöhen
+#   1. Versionsnummer in VERSION erhöhen, in NEUES.txt eintragen, was neu ist (sieht deine Frau nach dem Update)
 #   2. sh werkzeug/paket.sh
 set -e
 P=$(cd "$(dirname "$0")/.." && pwd)
@@ -10,6 +10,13 @@ echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FEHLER: VERSION muss 
 # Version in App und Offline-Speicher setzen (neuer Cache-Name = Handy lädt die neuen Dateien)
 sed -i "s/^const APP_VERSION = '[^']*';/const APP_VERSION = '$V';/" "$P/app.js"
 sed -i "s/^const CACHE = 'ringtagebuch-[^']*';/const CACHE = 'ringtagebuch-$V';/" "$P/sw.js"
+# version.json: daran erkennt die App auf dem iPhone, dass es ein Update gibt; NEUES.txt = „Was ist neu“
+python3 - "$P" "$V" <<'PY'
+import json, sys
+root, v = sys.argv[1], sys.argv[2]
+notes = [l.strip() for l in open(root + '/NEUES.txt', encoding='utf-8') if l.strip()]
+json.dump({'version': v, 'notes': notes}, open(root + '/version.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+PY
 node --check "$P/app.js"; node --check "$P/sw.js"
 python3 -c "import json,sys; [json.load(open(f)) for f in sys.argv[1:]]" "$P/manifest.json" "$P/werkzeug/spk/conf/resource" "$P/werkzeug/spk/conf/privilege"
 for f in "$P"/werkzeug/spk/scripts/*; do sh -n "$f"; done

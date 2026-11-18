@@ -1,0 +1,9 @@
+{
+ "version": "1.3.0",
+ "notes": [
+  "Updates kommen jetzt von selbst: Öffnest du die App, lädt sie automatisch die neueste Version.",
+  "Nach einem Update zeigt dir dieses Fenster kurz, was neu ist.",
+  "„Mit KI auswerten“ (unter Auswertung): fertiger Auftrag mit allen Tagesdaten für ChatGPT, Claude & Co.",
+  "Die Auswertung zeigt jetzt standardmäßig den aktuellen Monat, mit Vor- und Zurückblättern."
+ ]
+}

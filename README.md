@@ -18,12 +18,17 @@ Lokal starten: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen
 ## Synology-Paket
 
 ```sh
-# 1. Versionsnummer in VERSION erhöhen (z. B. 1.0.0 → 1.1.0)
+# 1. Versionsnummer in VERSION erhöhen (z. B. 1.3.0 → 1.4.0)
+# 2. In NEUES.txt eintragen, was neu ist (erscheint nach dem Update einmal auf dem iPhone)
 sh werkzeug/paket.sh     # baut ausgabe/ringtagebuch-<v>.spk und prüft es
 ```
 
 Installation: Paket-Zentrum → „Manuell installieren“ → `.spk` wählen. Danach unter
 `http://IP-der-DiskStation/ringtagebuch/` erreichbar. Ausführlich: `LIESMICH.txt`.
+
+Updates erreichen das iPhone von selbst: Die App lädt beim Öffnen immer zuerst von der DiskStation
+und prüft beim Zurückkehren aus dem Hintergrund `version.json`. Bei einer neuen Version lädt sie sich neu
+und zeigt einmal „Was ist neu“.
 
 Aufbau wie beim NununuMe-Paket (`werkzeug/spk/`), aber ohne PHP und ohne Hintergrund-Dienst:
 Web Station liefert die Dateien statisch aus, Gesundheitsdaten liegen nie auf der DiskStation.

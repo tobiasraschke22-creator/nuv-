@@ -15,13 +15,15 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 root, out_dir = sys.argv[1], sys.argv[2]
 version = open(os.path.join(root, 'VERSION')).read().strip()
-FILES = ['index.html', 'style.css', 'app.js', 'sw.js', 'manifest.json',
+FILES = ['index.html', 'style.css', 'app.js', 'sw.js', 'manifest.json', 'version.json',
          'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png']
 missing = [f for f in FILES if not os.path.exists(os.path.join(root, f))]
 assert not missing, missing
 # Versionsnummer muss in App und Offline-Speicher stehen, sonst lädt das Handy das Update nicht
 assert f"APP_VERSION = '{version}'" in open(os.path.join(root, 'app.js'), encoding='utf-8').read(), 'app.js: Version passt nicht'
 assert f"'ringtagebuch-{version}'" in open(os.path.join(root, 'sw.js'), encoding='utf-8').read(), 'sw.js: Version passt nicht'
+import json
+assert json.load(open(os.path.join(root, 'version.json'), encoding='utf-8'))['version'] == version, 'version.json: Version passt nicht'
 now = int(time.time())
 
 

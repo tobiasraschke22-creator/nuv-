@@ -41,9 +41,11 @@ Wer die App nur zu Hause oder per VPN nutzt, gibt sie damit nicht ins
 offene Internet.
 
 Update
-Neue .spk-Datei genauso über „Manuell installieren“ einspielen. Die Daten
-auf dem Handy bleiben erhalten, die App lädt die neue Version beim
-nächsten Öffnen.
+Neue .spk-Datei genauso über „Manuell installieren“ einspielen. Mehr ist
+nicht nötig – das iPhone muss niemand anfassen. Die App holt sich die neue
+Version selbst: beim nächsten Öffnen oder spätestens, wenn sie aus dem
+Hintergrund zurückkommt. Danach zeigt sie einmal „Was ist neu“. Die Daten
+auf dem Handy bleiben erhalten.
 
 Deinstallieren
 Paket-Zentrum → Ringtagebuch → Deinstallieren. Die Daten auf dem Handy

@@ -1,9 +1,9 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.2.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.3.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
-const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup' };
+const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup', seen: 'nuv.seenVersion' };
 const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { alert('Speichern fehlgeschlagen. Ist der Speicher voll oder der private Modus aktiv?'); } }
@@ -877,12 +877,60 @@ document.getElementById('tabs').addEventListener('click', ev => {
 // Tageswechsel, während die App offen bleibt (z. B. über Nacht im Hintergrund)
 let lastSeen = todayStr();
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && todayStr() !== lastSeen) {
+  if (document.visibilityState !== 'visible') return;
+  checkUpdate();
+  if (todayStr() !== lastSeen) {
     if (curDate === lastSeen) curDate = todayStr();
     lastSeen = todayStr(); render(true);
   }
 });
 
+// ---------- Updates von der DiskStation ----------
+// Kommt die App aus dem Hintergrund zurück, fragt sie die DiskStation nach der aktuellen Version.
+// Gibt es eine neuere, lädt sie sich neu (alle Eingaben sind da schon gespeichert).
+async function serverVersion() {
+  const r = await fetch('version.json', { cache: 'no-store' });
+  if (!r.ok) throw new Error('keine Versionsdatei');
+  return r.json();
+}
+async function checkUpdate() {
+  if (location.protocol === 'file:') return;
+  try {
+    const v = await serverVersion();
+    if (!v.version || v.version === APP_VERSION) return;
+    // Schutz vor Endlosschleife, falls nach dem Neuladen noch die alte Datei ankommt
+    let tried = null;
+    try { tried = sessionStorage.getItem('nuv.reloadFor'); sessionStorage.setItem('nuv.reloadFor', v.version); } catch (e) { /* ohne Schutz weiter */ }
+    if (tried === v.version) return;
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update().catch(() => {});
+    location.reload();
+  } catch (e) { /* offline: einfach mit der gespeicherten Version weiter */ }
+}
+// Nach einem Update einmal zeigen, was neu ist
+async function whatsNew() {
+  const seen = store.get(KEYS.seen, null);
+  if (seen === APP_VERSION) return;
+  store.set(KEYS.seen, APP_VERSION);
+  if (!seen || !settings) return; // Erstinstallation: nichts zeigen
+  try {
+    const v = await serverVersion();
+    if (v.version !== APP_VERSION || !(v.notes || []).length) return;
+    const el = document.createElement('div');
+    el.className = 'sheet-wrap';
+    el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="news-title">
+      <h2 id="news-title">Neu in Version ${esc(APP_VERSION)}</h2>
+      <ul>${v.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+      <button class="btn" data-close>Alles klar</button></div>`;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); };
+    el.addEventListener('click', ev => { if (ev.target === el || ev.target.closest('[data-close]')) close(); });
+    el.querySelector('[data-close]').focus();
+  } catch (e) { /* offline: beim nächsten Mal nicht erneut zeigen, ist nicht schlimm */ }
+}
+
 render(true);
+whatsNew();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 navigator.storage?.persist?.();
