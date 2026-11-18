@@ -21,7 +21,10 @@ Lokal starten: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen
 # 1. Versionsnummer in VERSION erhöhen (z. B. 1.3.0 → 1.4.0)
 # 2. In NEUES.txt eintragen, was neu ist (erscheint nach dem Update einmal auf dem iPhone)
 sh werkzeug/paket.sh     # baut ausgabe/ringtagebuch-<v>.spk und prüft es
+sh pruefung/test.sh      # App-Test und Update-Test gegen das fertige Paket
 ```
+
+Regeln für Änderungen (Einführung mitpflegen usw.): `CLAUDE.md`.
 
 Installation: Paket-Zentrum → „Manuell installieren“ → `.spk` wählen. Danach unter
 `http://IP-der-DiskStation/ringtagebuch/` erreichbar. Ausführlich: `LIESMICH.txt`.

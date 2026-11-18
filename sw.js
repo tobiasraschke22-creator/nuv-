@@ -1,5 +1,5 @@
-const CACHE = 'ringtagebuch-1.3.1'; // wird von werkzeug/paket.sh aus VERSION gesetzt
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
+const CACHE = 'ringtagebuch-1.4.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'intro.js', 'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 // Beim Installieren alles frisch vom Server holen (nicht aus dem Browser-Zwischenspeicher)
 self.addEventListener('install', e => {

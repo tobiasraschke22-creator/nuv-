@@ -1,9 +1,9 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.3.1'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '1.4.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
-const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup', seen: 'nuv.seenVersion' };
+const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup', seen: 'nuv.seenVersion', intro: 'nuv.intro' };
 const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { alert('Speichern fehlgeschlagen. Ist der Speicher voll oder der private Modus aktiv?'); } }
@@ -650,6 +650,9 @@ function settingsHTML() {
   const last = store.get(KEYS.backup, null);
   return `<h1>Mehr</h1>
   ${ios ? '<div class="card"><h2 style="margin-top:0">Auf dem iPhone installieren</h2><p class="muted">In Safari auf <b>Teilen</b> tippen, dann auf <b>Zum Home-Bildschirm</b>. Nur so bleiben die Daten dauerhaft gespeichert und die App öffnet sich im Vollbild.</p></div>' : ''}
+  <div class="card"><h2 style="margin-top:0">Einführung</h2>
+    <p class="muted">Alle Funktionen der App, kurz erklärt und animiert.</p>
+    <p><button class="btn ghost" data-action="intro">Einführung ansehen</button></p></div>
   <div class="card"><h2 style="margin-top:0">Erinnerungen</h2>
     <p class="muted">Kalendertermine mit Hinweis landen im iPhone-Kalender und erinnern auch, wenn die App geschlossen ist. Nach dem Tippen erscheint die Kalender-Vorschau: „Alle hinzufügen“ wählen.</p>
     <p><button class="btn" data-action="ics">Ringwechsel: 2× am Tag erinnern</button></p>
@@ -766,6 +769,7 @@ view.addEventListener('click', ev => {
     case 'period': period = d.v; break;
     case 'pmonth': { const [y, m] = pMonth.split('-').map(Number); const n = new Date(Date.UTC(y, m - 1 + +d.d, 1)).toISOString().slice(0, 7); if (n <= todayStr().slice(0, 7)) pMonth = n; break; }
     case 'aicopy': aiCopy(); return;
+    case 'intro': showIntro(); return;
     case 'aishare': share(`ringtagebuch-ki-${period === 'month' ? pMonth : todayStr()}.txt`, aiText(), 'text/plain'); return;
     case 'addmeal': {
       const now = new Date();
@@ -927,16 +931,20 @@ async function whatsNew() {
     el.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="news-title">
       <h2 id="news-title">Neu in Version ${esc(APP_VERSION)}</h2>
       <ul>${v.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
-      <button class="btn" data-close>Alles klar</button></div>`;
+      <button class="btn" data-close>Alles klar</button>
+      <button class="btn ghost" data-intro style="width:100%;margin-top:8px">Einführung ansehen</button></div>`;
     document.body.appendChild(el);
     requestAnimationFrame(() => el.classList.add('show'));
     const close = () => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); };
-    el.addEventListener('click', ev => { if (ev.target === el || ev.target.closest('[data-close]')) close(); });
+    el.addEventListener('click', ev => {
+      if (ev.target.closest('[data-intro]')) { close(); showIntro(); return; }
+      if (ev.target === el || ev.target.closest('[data-close]')) close();
+    });
     el.querySelector('[data-close]').focus();
   } catch (e) { /* offline: beim nächsten Mal nicht erneut zeigen, ist nicht schlimm */ }
 }
 
 render(true);
-whatsNew();
+if (!introSeen()) showIntro(() => whatsNew()); else whatsNew();
 if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
 navigator.storage?.persist?.();

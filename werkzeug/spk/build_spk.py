@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 root, out_dir = sys.argv[1], sys.argv[2]
 version = open(os.path.join(root, 'VERSION')).read().strip()
-FILES = ['index.html', 'style.css', 'app.js', 'sw.js', 'manifest.json', 'version.json',
+FILES = ['index.html', 'style.css', 'app.js', 'intro.js', 'sw.js', 'manifest.json', 'version.json',
          'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png']
 missing = [f for f in FILES if not os.path.exists(os.path.join(root, f))]
 assert not missing, missing

@@ -17,7 +17,7 @@ root, v = sys.argv[1], sys.argv[2]
 notes = [l.strip() for l in open(root + '/NEUES.txt', encoding='utf-8') if l.strip()]
 json.dump({'version': v, 'notes': notes}, open(root + '/version.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 PY
-node --check "$P/app.js"; node --check "$P/sw.js"
+node --check "$P/app.js"; node --check "$P/intro.js"; node --check "$P/sw.js"
 python3 -c "import json,sys; [json.load(open(f)) for f in sys.argv[1:]]" "$P/manifest.json" "$P/werkzeug/spk/conf/resource" "$P/werkzeug/spk/conf/privilege"
 for f in "$P"/werkzeug/spk/scripts/*; do sh -n "$f"; done
 mkdir -p "$O"

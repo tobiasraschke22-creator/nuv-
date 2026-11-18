@@ -1,7 +1,6 @@
 {
- "version": "1.3.1",
+ "version": "1.4.0",
  "notes": [
-  "Symptome haben jetzt ein eigenes Freitextfeld: Wie fühlte sich der Schmerz an, wann kam er, was war anders?",
-  "Die Notizen fließen in die KI-Auswertung, den Bericht und die CSV ein. Die Auswertung zeigt außerdem, welche Beschreibungen sich häufen."
+  "Neue Einführung: Alle Funktionen kurz erklärt und animiert. Jederzeit unter „Mehr“ → „Einführung ansehen“."
  ]
 }
