@@ -2,10 +2,11 @@
 /* Einführung: Startbildschirm, der alle Funktionen mit kleinen Animationen erklärt.
    WICHTIG: Bei jeder neuen Funktion und jeder Optikänderung hier anpassen (siehe CLAUDE.md).
    Jede Folie: Titel, kurzer Text, „art“ = animierte Mini-Darstellung (nur HTML/CSS, Klassen ia-*). */
-const INTRO_VERSION = 1;
+const INTRO_VERSION = 2;
 
-const nums = (from, to, on) => Array.from({ length: to - from + 1 }, (_, k) => from + k)
-  .map(n => `<span class="${n === on ? 'ia-pick' : ''}">${n > 0 && from < 0 ? '+' + n : String(n).replace('-', '−')}</span>`).join('');
+// Mini-Schieberegler wie in der App (tone: '' = Beschwerden, 'good' = Schlaf/Energie)
+const iaSlider = (label, to, tone = '') => `<div class="ia-slider ${tone}" style="--to:${to}%"><small>${label}</small><div class="ia-sl-track"><i></i><b></b></div></div>`;
+const iaSeg = () => `<div class="ia-seg"><i class="ia-seg-pill"></i>${[['sym', 'Symptome'], ['food', 'Essen'], ['emo', 'Gefühle'], ['body', 'Körper']].map(([k, l]) => `<span>${icon(k)}${l}</span>`).join('')}</div>`;
 
 const INTRO_SLIDES = [
   {
@@ -15,63 +16,87 @@ const INTRO_SLIDES = [
   },
   {
     title: 'Vier Bereiche, ein Tag',
-    text: 'Unter „Heute“ wechselst du zwischen Symptome, Essen, Gefühle und Körper – antippen oder seitlich wischen. Ein Punkt zeigt, was schon ausgefüllt ist.',
-    art: `<div class="ia-seg"><i class="ia-seg-pill"></i><span>Symptome</span><span>Essen</span><span>Gefühle</span><span>Körper</span></div>
-      <div class="ia-segdots"><b style="--d:0"></b><b style="--d:1"></b><b style="--d:2"></b><b style="--d:3"></b></div>`
+    text: 'Unter „Heute“ wechselst du zwischen Symptome, Essen, Gefühle und Körper – antippen oder seitlich wischen. Ein Punkt zeigt, was schon ausgefüllt ist. Sind alle vier fertig, schließt sich ein kleiner Ring.',
+    art: `${iaSeg()}<div class="ia-segdots"><b style="--d:0"></b><b style="--d:1"></b><b style="--d:2"></b><b style="--d:3"></b></div>`
   },
   {
     title: 'Symptome',
-    text: 'Schmerzen und Krämpfe von 0 bis 10, wo es wehtut, Durchfall, Blutung – und ein Freitext für alles, was anders war.',
-    art: `<div class="ia-scale">${nums(0, 10, 7)}</div>
-      <div class="ia-chips"><span>Unterleib</span><span class="ia-pick" style="--d:1">Rücken</span><span>Darm</span></div>
+    text: 'Schmerzen und Krämpfe stellst du mit dem Regler ein: ziehen oder auf eine Zahl tippen. Dazu wo es wehtut, Durchfall, Blutung, weitere Beschwerden wie Blähbauch und ein Freitext. Auf Wunsch auch morgens, mittags und abends getrennt.',
+    art: `${iaSlider('Schmerzen', 70)}
+      <div class="ia-chips"><span>Unterleib</span><span class="ia-pick" style="--d:1">Blähbauch</span><span>Übelkeit</span></div>
       <div class="ia-type"><span>stechend nach dem Joggen</span></div>`
   },
   {
     title: 'Essen',
-    text: 'Was gab es, wie viel und wann? Dazu ein Freitext. Die App erkennt später, nach welchem Essen es dir schlechter ging.',
+    text: 'Was gab es, wie viel und wann? Häufige Gerichte schlägt die App beim Tippen vor, „Wie gestern“ übernimmt die Mahlzeiten vom Vortag. Merkmale wie Gluten oder Milchprodukte tippst du einfach an.',
     art: `<div class="ia-meal" style="--d:0"><b>08:00</b><span>Haferbrei mit Banane</span><em>normal</em></div>
       <div class="ia-meal" style="--d:1"><b>13:00</b><span>Pasta mit Tomaten</span><em>viel</em></div>
-      <div class="ia-meal" style="--d:2"><b>19:30</b><span>Tee und Brot</span><em>wenig</em></div>`
+      <div class="ia-chips"><span class="ia-pick" style="--d:2">Gluten</span><span>Milchprodukte</span><span class="ia-pick" style="--d:3">Koffein</span></div>`
   },
   {
     title: 'Gefühle',
     text: 'Deine Laune von −5 bis +5, dazu Angst, Wut und Stress – und Platz für deine Gedanken.',
-    art: `<div class="ia-mood"><div class="ia-mood-track"><i></i></div><div class="ia-mood-lbl"><span>−5</span><span>0</span><span>+5</span></div></div>
-      <div class="ia-bars"><div><span>Angst</span><i style="--w:30%;--d:0"></i></div><div><span>Wut</span><i style="--w:15%;--d:1"></i></div><div><span>Stress</span><i style="--w:70%;--d:2"></i></div></div>`
+    art: `<div class="ia-slider ia-mood"><small>Laune</small><div class="ia-sl-track" style="--to:78%"><i style="background:linear-gradient(90deg,var(--sl-mood),var(--accent))"></i><b></b></div><div class="scale-lbl"><span>−5</span><span>0</span><span>+5</span></div></div>
+      ${iaSlider('Stress', 35)}`
   },
   {
     title: 'Körper',
-    text: 'Wie hast du geschlafen, wie viel Energie hast du? Und welche Schmerzmittel oder Hilfen hast du genommen?',
-    art: `<div class="ia-bars"><div><span>Schlaf</span><i style="--w:80%;--d:0"></i></div><div><span>Energie</span><i style="--w:50%;--d:1"></i></div></div>
-      <div class="ia-chips"><span class="ia-pick" style="--d:2">Ibuprofen</span><span>Wärmflasche</span></div>`
+    text: 'Schlaf und Energie, wie viel du getrunken und ob du dich bewegt hast. Bei Schmerzmitteln: wann genommen und wie gut sie geholfen haben.',
+    art: `${iaSlider('Schlaf', 80, 'good')}
+      <div class="ia-glasses">${Array.from({ length: 8 }, (_, k) => `<i style="--d:${k}"></i>`).join('')}</div>
+      <div class="ia-chips"><span class="ia-pick" style="--d:1">Spaziergang</span><span class="ia-pick" style="--d:3">Ibuprofen · gut</span></div>`
   },
   {
     title: 'Ring & Erinnerungen',
-    text: 'Die App zählt die Ring-Tage und sagt dir, wann gewechselt wird. Auf Wunsch erinnert dein Kalender am Wechseltag um 8 und um 20 Uhr.',
-    art: `<svg class="ia-ring" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="48" class="ia-ring-bg"/><circle cx="60" cy="60" r="48" class="ia-ring-fg" pathLength="1"/><text x="60" y="58" text-anchor="middle" class="ia-ring-n">13</text><text x="60" y="76" text-anchor="middle" class="ia-ring-s">von 28</text></svg>
+    text: 'Der Kreis zeigt, wie weit der Ring ist, und sagt dir, wann gewechselt wird. Auf Wunsch erinnert dein Kalender am Wechseltag um 8 und um 20 Uhr.',
+    art: `<svg class="ia-ring" viewBox="0 0 120 120" aria-hidden="true"><defs><linearGradient id="iarg" x1="1" y1=".5" x2="0" y2=".5"><stop offset="0" stop-color="#f797ad"/><stop offset=".5" stop-color="#f7c3a4"/><stop offset="1" stop-color="#bfe96a"/></linearGradient></defs><circle cx="60" cy="60" r="48" class="ia-ring-bg"/><circle cx="60" cy="60" r="48" class="ia-ring-fg" stroke="url(#iarg)" pathLength="1"/><text x="60" y="58" text-anchor="middle" class="ia-ring-n">13</text><text x="60" y="76" text-anchor="middle" class="ia-ring-s">von 28</text></svg>
       <div class="ia-bells"><span style="--d:0">8:00 Ring wechseln</span><span style="--d:1">20:00 Ring wechseln</span></div>`
   },
   {
     title: 'Verlauf',
-    text: 'Im Kalender siehst du jeden Tag auf einen Blick, mit Blutungen und Ringwechseln. Antippen, um etwas nachzutragen.',
-    art: `<div class="ia-cal">${Array.from({ length: 28 }, (_, k) => `<span style="--d:${k}" class="${[3, 4, 11].includes(k) ? 'ia-dot' : k === 16 ? 'ia-ring-day' : ''}"></span>`).join('')}</div>`
+    text: 'Der Kalender färbt jeden Tag nach der Stärke der Schmerzen – je kräftiger, desto mehr tat es weh. Dazu Blutungen und Ringwechsel. Antippen, um etwas nachzutragen.',
+    art: `<div class="ia-cal">${Array.from({ length: 28 }, (_, k) => `<span style="--d:${k};--h:${[2, 5, 7, 3, 0, 1, 4, 8, 6, 2, 0, 3, 5, 9, 4, 1, 0, 2, 6, 7, 3, 1, 0, 4, 5, 2, 1, 0][k]}" class="${[3, 4, 11].includes(k) ? 'ia-dot' : k === 16 ? 'ia-ring-day' : ''}"></span>`).join('')}</div>`
   },
   {
     title: 'Auswertung',
-    text: 'Für Monat, Ring oder alles: Verläufe, Vergleiche und Zusammenhänge zwischen Essen, Gefühlen, Schlaf und Beschwerden.',
-    art: `<svg class="ia-chart" viewBox="0 0 220 90" aria-hidden="true"><polyline pathLength="1" points="5,70 30,40 55,55 80,25 105,45 130,30 155,60 180,35 215,50"/></svg>
-      <div class="ia-insight">Nach Tagen mit hohem Stress gab es öfter starke Schmerzen.</div>`
+    text: 'Für Monat, Ring oder alles: Verläufe, Vergleiche und Zusammenhänge zwischen Essen, Gefühlen, Schlaf und Beschwerden. Tippe auf ein Diagramm, um die Werte eines Tages zu sehen.',
+    art: `<div class="ia-chart"><svg viewBox="0 0 220 90" aria-hidden="true"><path pathLength="1" d="M5,70 C15,60 20,40 30,40 C40,40 45,55 55,55 C65,55 70,25 80,25 C90,25 95,45 105,45 C115,45 120,30 130,30 C140,30 145,60 155,60 C165,60 170,35 180,35 C190,35 205,50 215,50"/></svg><span class="ia-tip">Di., 10. Nov · Schmerzen 6</span></div>`
+  },
+  {
+    title: 'Vergleich mit dem Vormonat',
+    text: 'In der Monatsansicht siehst du, was sich gegenüber dem letzten Monat verändert hat – besser, schlechter oder gleich.',
+    art: `<div class="ia-compare"><span>&nbsp;</span><b>Okt</b><b>Nov</b><b>&nbsp;</b>
+      <span style="--d:1">Ø Schmerzen</span><b style="--d:1">5,2</b><b style="--d:1">3,9</b><b class="up" style="--d:1">besser</b>
+      <span style="--d:2">Ø Laune</span><b style="--d:2">−0,8</b><b style="--d:2">+1,2</b><b class="up" style="--d:2">besser</b>
+      <span style="--d:3">Durchfall</span><b style="--d:3">30 %</b><b style="--d:3">28 %</b><b style="--d:3">≈</b></div>`
   },
   {
     title: 'Mit KI auswerten',
-    text: 'Ein Tipp kopiert einen fertigen Auftrag mit allen Daten des Monats. Einfach in ChatGPT, Claude oder eine andere KI einfügen.',
+    text: 'Ein Tipp kopiert einen fertigen Auftrag mit allen Daten des Monats und dem Vergleich zum Vormonat. Einfach in ChatGPT, Claude oder eine andere KI einfügen.',
     art: `<div class="ia-doc"><div class="ia-lines"><i style="--w:90%;--d:0"></i><i style="--w:75%;--d:1"></i><i style="--w:85%;--d:2"></i><i style="--w:60%;--d:3"></i></div></div>
       <div class="ia-toast">Kopiert ✓</div>`
   },
   {
+    title: 'Arzttermin',
+    text: 'Sammle unter „Mehr“ deine Fragen für die Ärztin, hake sie beim Termin ab und notiere die Antworten. Am Tag vorher erinnert dich die App.',
+    art: `<div class="ia-q"><i style="--d:0"></i>Sind die Schmierblutungen normal?</div>
+      <div class="ia-q"><i style="--d:1"></i>Ring durchgehend weiter nehmen?</div>
+      <div class="ia-q"><i style="--d:2"></i>Was hilft gegen den Blähbauch?</div>`
+  },
+  {
     title: 'Für die Ärztin & Backup',
-    text: 'Teile einen Bericht oder drucke ihn als PDF. Mach ab und zu ein Backup – die App erinnert dich daran.',
+    text: 'Teile einen Bericht oder drucke ihn als PDF – mit deinen offenen Fragen. Mach ab und zu ein Backup, die App erinnert dich daran.',
     art: `<div class="ia-doc ia-doc-share"><div class="ia-lines"><i style="--w:70%;--d:0"></i><i style="--w:90%;--d:1"></i><i style="--w:50%;--d:2"></i></div><svg class="ia-share" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg></div>`
+  },
+  {
+    title: 'Ganz nach dir',
+    text: 'Alles ist freiwillig. Unter „Mehr“ → „Was möchtest du erfassen?“ schaltest du Bereiche ein oder aus, die du nicht brauchst.',
+    art: `<div class="ia-switches"><div>Weitere Beschwerden<i style="--d:0"></i></div><div>Schmerzen nach Tageszeit<i style="--d:1"></i></div><div>Trinken &amp; Bewegung<i style="--d:2"></i></div></div>`
+  },
+  {
+    title: 'Hell oder dunkel',
+    text: 'Die App folgt deinem iPhone: tagsüber hell, abends im dunklen Modus – ganz von selbst.',
+    art: `<div class="ia-theme"><div class="light"><i></i><i class="acc"></i><i></i></div><div class="dark"><i></i><i class="acc"></i><i></i></div></div>`
   },
   {
     title: 'Privat und immer aktuell',

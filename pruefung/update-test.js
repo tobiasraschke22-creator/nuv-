@@ -4,9 +4,9 @@ const SP = process.argv[2];
 const OLD = process.env.OLD, NEW = process.env.NEW;
 let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
 // Aufruf über pruefung/test.sh: SP enthält alt/, neu/ und www/ringtagebuch/ (wird vom Server ausgeliefert)
-const serve = v => execSync(`cp ${SP}/${v}/* ${SP}/www/ringtagebuch/`);
+const serve = v => execSync(`cp -r ${SP}/${v}/. ${SP}/www/ringtagebuch/`);
 (async () => {
-  const b = await chromium.launch(); const ctx = await b.newContext({ ...devices['iPhone 14'] }); await ctx.addInitScript(() => { try { if (!localStorage.getItem('nuv.intro')) localStorage.setItem('nuv.intro', '1'); } catch (e) {} }); const p = await ctx.newPage();
+  const b = await chromium.launch(); const ctx = await b.newContext({ ...devices['iPhone 14'] }); await ctx.addInitScript(() => { try { if (!localStorage.getItem('nuv.intro')) localStorage.setItem('nuv.intro', '99'); } catch (e) {} }); const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message));
   let loads = 0; p.on('load', () => loads++);
   const ver = () => p.evaluate(() => APP_VERSION);
@@ -29,7 +29,13 @@ const serve = v => execSync(`cp ${SP}/${v}/* ${SP}/www/ringtagebuch/`);
   ok(await p.isVisible('.sheet') && (await p.textContent('.sheet')).includes('Neu in Version ' + NEW) && (await p.textContent('.sheet')).includes('Testneuerung'), '„Was ist neu“ erscheint einmal');
   await p.click('.sheet [data-close]'); await p.waitForTimeout(600);
   ok(!(await p.$('.sheet')), 'Fenster schließt');
-  await p.reload({ waitUntil: 'domcontentloaded' }); await p.waitForTimeout(800);
+  const swNow = () => p.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); return [r?.active?.state, r?.installing?.state, r?.waiting?.state].map(x => x || '-').join('/'); }).catch(() => '?');
+  const swBefore = await swNow();
+  let hung = false;
+  await p.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => { hung = true; });
+  ok(!hung, `Neuladen nach dem Update hängt nicht (Offline-Speicher vorher: ${swBefore})`);
+  if (hung) await p.goto(process.env.BASE);
+  await p.waitForTimeout(800);
   ok(!(await p.$('.sheet')), '„Was ist neu“ kommt nicht nochmal');
 
   // Schutz gegen Endlosschleife: Server meldet neuere Version, liefert aber alte Dateien

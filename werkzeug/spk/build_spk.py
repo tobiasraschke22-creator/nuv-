@@ -15,8 +15,9 @@ from PIL import Image, ImageDraw
 HERE = os.path.dirname(os.path.abspath(__file__))
 root, out_dir = sys.argv[1], sys.argv[2]
 version = open(os.path.join(root, 'VERSION')).read().strip()
-FILES = ['index.html', 'style.css', 'app.js', 'intro.js', 'sw.js', 'manifest.json', 'version.json',
+FILES = ['index.html', 'style.css', 'app.js', 'icons.js', 'intro.js', 'sw.js', 'manifest.json', 'version.json',
          'icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png']
+FILES += ['splash/' + f for f in sorted(os.listdir(os.path.join(root, 'splash'))) if f.endswith('.png')]  # iPhone-Startbilder
 missing = [f for f in FILES if not os.path.exists(os.path.join(root, f))]
 assert not missing, missing
 # Versionsnummer muss in App und Offline-Speicher stehen, sonst lädt das Handy das Update nicht
@@ -48,6 +49,7 @@ def add_dir(tar, name, mode=0o755):
 pkg = io.BytesIO()
 with tarfile.open(fileobj=pkg, mode='w:gz') as t:
     add_dir(t, 'src')
+    add_dir(t, 'src/splash')
     for f in FILES:
         add_bytes(t, 'src/' + f, open(os.path.join(root, f), 'rb').read())
 pkg_bytes = pkg.getvalue()

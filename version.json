@@ -1,6 +1,10 @@
 {
- "version": "1.4.0",
+ "version": "2.0.0",
  "notes": [
-  "Neue Einführung: Alle Funktionen kurz erklärt und animiert. Jederzeit unter „Mehr“ → „Einführung ansehen“."
+  "Neu gestaltet: dunkler Modus, Symbole, Schieberegler, Ring-Kreis und ein Kalender, der die Schmerzstärke zeigt.",
+  "Neu: weitere Beschwerden wie Blähbauch, Ernährungs-Merkmale, „Wie gestern“ und Vorschläge beim Essen.",
+  "Neu: Trinken, Bewegung und wie gut Schmerzmittel geholfen haben.",
+  "Neu: Arzttermin mit Fragenliste und der Vergleich mit dem Vormonat in der Auswertung.",
+  "Unter „Mehr“ → „Was möchtest du erfassen?“ kannst du jeden Zusatzbereich ausschalten. Alles ist freiwillig."
  ]
 }

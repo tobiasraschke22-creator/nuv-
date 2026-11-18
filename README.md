@@ -2,16 +2,17 @@
 
 Offline-fähige Web-App (PWA) ohne Build-Schritt. Alle Daten bleiben im Browser (localStorage).
 
-- Tägliches Assessment ab dem ersten Ring-Tag:
-  - Endometriose-Symptome: Schmerzen mit Ort, Krämpfe, Durchfall, Blutung
-  - Essenstagebuch: Mahlzeiten mit Uhrzeit und Menge, Freitext
-  - Emotionen: Laune (−5 bis +5), Angst, Wut, Stress, Freitext
-  - Körper: Schlaf, Energie, Schmerzmittel
-- Ring-Rhythmus durchgehend oder mit Pause, Tagebuch-Tag-Zähler, Wechsel-Hinweise
-- Kalender-Erinnerungen (.ics): Ringwechsel 2× am Tag, tägliche Tagebuch-Erinnerung
-- Auswertung (gesamt, aktueller Ring, letzte 31 Tage): Zusammenhänge zwischen Essen,
-  Emotionen, Schlaf und Symptomen, Verläufe, Vergleich nach Ring-Woche und Ring
-- Bericht als Datei teilen (für die Ärztin), Drucken, CSV, Backup
+- Tägliches Assessment ab dem ersten Ring-Tag, in vier Reitern:
+  - Symptome: Schmerzen (auf Wunsch morgens/mittags/abends) mit Ort, Krämpfe, Durchfall, Blutung, weitere Beschwerden, Freitext
+  - Essen: Mahlzeiten mit Uhrzeit und Menge, Vorschläge, „Wie gestern“, Ernährungs-Merkmale, Freitext
+  - Gefühle: Laune (−5 bis +5), Angst, Wut, Stress, Freitext
+  - Körper: Schlaf, Energie, Trinken, Bewegung, Schmerzmittel mit Einnahmezeit und Wirkung
+- Zusatzbereiche einzeln abschaltbar, alles freiwillig
+- Ring-Rhythmus durchgehend oder mit Pause, Ring-Kreis, Tagebuch-Tag, Wechsel-Hinweise, Kalender-Erinnerungen (.ics)
+- Arzttermin mit Fragenliste, Antworten und Hinweis am Vortag
+- Auswertung (Monat, Ring, 31 Tage, gesamt): Vormonatsvergleich, Zusammenhänge zwischen Essen, Gefühlen, Schlaf,
+  Trinken, Bewegung und Symptomen, antippbare Verläufe, Tabellen; KI-Auftrag, Bericht, PDF, CSV, Backup
+- Einführung mit Animationen, Hell/Dunkel, iPhone-Startbilder, Updates kommen von selbst
 
 Lokal starten: `python3 -m http.server 8000`, dann http://localhost:8000 öffnen.
 

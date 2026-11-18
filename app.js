@@ -1,9 +1,9 @@
 'use strict';
 /* Ringtagebuch – NuvaRing & Endometriose. Alle Daten bleiben im localStorage des Geräts. */
-const APP_VERSION = '1.4.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
+const APP_VERSION = '2.0.0'; // wird von werkzeug/paket.sh aus VERSION gesetzt
 
 // ---------- Speicher ----------
-const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup', seen: 'nuv.seenVersion', intro: 'nuv.intro' };
+const KEYS = { settings: 'nuv.settings', entries: 'nuv.entries', backup: 'nuv.lastBackup', seen: 'nuv.seenVersion', intro: 'nuv.intro', doctor: 'nuv.doctor' };
 const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { alert('Speichern fehlgeschlagen. Ist der Speicher voll oder der private Modus aktiv?'); } }
@@ -12,6 +12,8 @@ let settings = store.get(KEYS.settings, null); // {inserts:[YYYY-MM-DD], wearDay
 let entries = store.get(KEYS.entries, {});     // {YYYY-MM-DD: Eintrag}
 const saveSettings = () => store.set(KEYS.settings, settings);
 const saveEntries = () => store.set(KEYS.entries, entries);
+let doctor = store.get(KEYS.doctor, { date: '', questions: [], notes: '' }); // Arzttermin: Datum, Fragen, Notizen
+const saveDoctor = () => store.set(KEYS.doctor, doctor);
 
 // ---------- Datum ----------
 const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -58,13 +60,29 @@ const DIARRHEA = ['Keiner', '1×', '2–3×', '4× oder mehr'];
 const AMOUNTS = ['wenig', 'normal', 'viel'];
 const PAIN_AREAS = ['Unterleib', 'Rücken', 'Darm', 'Blase', 'Beine', 'Beim Sex', 'Kopf'];
 const MEDS = ['Ibuprofen', 'Paracetamol', 'Metamizol', 'Buscopan', 'Wärmflasche', 'Sonstiges'];
+const EXTRA_SYM = ['Blähbauch', 'Übelkeit', 'Verstopfung', 'Schmerz beim Stuhlgang', 'Schmerz beim Wasserlassen', 'Ausstrahlung ins Bein', 'Erschöpfung'];
+const FOOD_TAGS = ['Gluten', 'Milchprodukte', 'Zucker', 'Alkohol', 'Koffein', 'Rotes Fleisch', 'Scharf', 'Fettig'];
+const MOVEMENT = ['Keine', 'Spaziergang', 'Yoga / Dehnen', 'Sport leicht', 'Sport intensiv'];
+const MED_EFFECT = ['gar nicht', 'etwas', 'gut', 'sehr gut'];
+const DAYTIMES = [['m', 'Morgens', 'morgens'], ['n', 'Mittags', 'mittags'], ['a', 'Abends', 'abends']];
+// Zusatzbereiche: unter „Mehr“ ein- und ausschaltbar (Schlüssel, Titel, Erklärung, Standard)
+const MODULES = [
+  ['extraSym', 'Weitere Beschwerden', 'Blähbauch, Übelkeit, Verstopfung … bei den Symptomen', true],
+  ['daytime', 'Schmerzen nach Tageszeit', 'Morgens, mittags und abends getrennt bewerten', false],
+  ['foodTags', 'Ernährungs-Merkmale', 'Gluten, Milchprodukte, Zucker … zum Antippen', true],
+  ['drinkMove', 'Trinken & Bewegung', 'Gläser Wasser und Bewegung im Bereich Körper', true],
+  ['medEffect', 'Wirkung der Schmerzmittel', 'Wann genommen und wie gut es geholfen hat', true]
+];
+const mod = k => { const v = settings && settings.modules ? settings.modules[k] : undefined; return v ?? MODULES.find(m => m[0] === k)[3]; };
+const hasPainkiller = e => (e.meds || []).some(m => m !== 'Wärmflasche');
 const isBleed = e => ['light', 'medium', 'heavy'].includes(e.bleeding);
 const isSpot = e => e.bleeding === 'spotting';
 const filled = s => !!(s || '').trim();
 const hasMeals = e => (e.meals || []).some(m => filled(m.text));
-const hasData = e => !!e && (['pain', 'cramps', 'diarrhea', 'mood', 'anxiety', 'anger', 'stress', 'sleep', 'energy'].some(k => e[k] != null) ||
+const hasData = e => !!e && (['pain', 'cramps', 'diarrhea', 'mood', 'anxiety', 'anger', 'stress', 'sleep', 'energy', 'water', 'movement', 'medEffect'].some(k => e[k] != null) ||
   !!e.bleeding || filled(e.note) || filled(e.symNote) || filled(e.foodNote) || filled(e.medsNote) || hasMeals(e) ||
-  (e.painAreas || []).length > 0 || (e.meds || []).length > 0);
+  ['painAreas', 'meds', 'symptoms', 'foodTags'].some(k => (e[k] || []).length > 0) ||
+  (!!e.painDay && Object.values(e.painDay).some(v => v != null)));
 
 let tab = 'today';
 let curDate = todayStr();
@@ -90,6 +108,30 @@ function render(anim) {
   view.innerHTML = !settings ? onboardingHTML() : { today: todayHTML, history: historyHTML, analysis: analysisHTML, settings: settingsHTML }[tab]();
   if (anim) replay(view, 'view-in');
   flash = '';
+  setupTopbar();
+}
+// Große Überschrift wandert beim Scrollen in die obere Leiste (wie in iOS)
+const topbar = document.getElementById('topbar');
+function setupTopbar() {
+  const h = view.querySelector('h1.large');
+  topbar.hidden = !h;
+  document.getElementById('topbar-title').textContent = h ? (h.dataset.short || h.textContent) : '';
+  onScroll();
+}
+function onScroll() {
+  const h = view.querySelector('h1.large');
+  topbar.classList.toggle('show', !!h && h.getBoundingClientRect().bottom < (topbar.offsetHeight || 50));
+}
+window.addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true });
+// Kleine Erfolgsanimation, wenn alle vier Bereiche eines Tages ausgefüllt sind
+const celebrated = {};
+function celebrate() {
+  const el = document.createElement('div');
+  el.className = 'celebrate'; el.setAttribute('role', 'status');
+  el.innerHTML = `<div><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="celg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f797ad"/><stop offset=".5" stop-color="#f7c3a4"/><stop offset="1" stop-color="#bfe96a"/></linearGradient></defs>
+    <circle cx="50" cy="50" r="40" stroke="url(#celg)" pathLength="100"/><path d="M33 51l11 11 23-24" pathLength="60"/></svg><b>Alles erfasst für heute</b></div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
 }
 // Animation neu starten (Klasse kurz entfernen, Layout erzwingen, wieder setzen)
 function replay(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
@@ -102,10 +144,10 @@ function toast(msg) {
 
 // ---------- Reiter (Segment-Schalter wie bei iOS) ----------
 const SECTIONS = [
-  { id: 'sym', label: 'Symptome', keys: ['pain', 'painAreas', 'cramps', 'diarrhea', 'bleeding', 'symNote'] },
-  { id: 'food', label: 'Essen', keys: ['meals', 'foodNote'] },
+  { id: 'sym', label: 'Symptome', keys: ['pain', 'painDay', 'painAreas', 'cramps', 'diarrhea', 'bleeding', 'symptoms', 'symNote'] },
+  { id: 'food', label: 'Essen', keys: ['meals', 'foodTags', 'foodNote'] },
   { id: 'emo', label: 'Gefühle', keys: ['mood', 'anxiety', 'anger', 'stress', 'note'] },
-  { id: 'body', label: 'Körper', keys: ['sleep', 'energy', 'meds', 'medsNote'] }
+  { id: 'body', label: 'Körper', keys: ['sleep', 'energy', 'water', 'movement', 'meds', 'medsNote', 'medEffect'] }
 ];
 const ASECTIONS = [
   { id: 'overview', label: 'Überblick' }, { id: 'links', label: 'Zusammen­hänge' },
@@ -118,13 +160,14 @@ function secDone(sec, e) {
     if (k === 'meals') return hasMeals(e);
     if (Array.isArray(v)) return v.length > 0;
     if (typeof v === 'string') return filled(v);
+    if (v && typeof v === 'object') return Object.values(v).some(x => x != null);
     return v != null;
   });
 }
 function segHTML(items, active, action, e, cls = '') {
   const i = items.findIndex(x => x.id === active);
   return `<div class="seg noprint ${cls}" role="tablist" style="--n:${items.length};--i:${i}"><span class="seg-pill" aria-hidden="true"></span>${items.map(x =>
-    `<button role="tab" aria-selected="${x.id === active}" class="${x.id === active ? 'on' : ''}" data-action="${action}" data-v="${x.id}">${x.label}${e ? `<i class="seg-dot ${secDone(x, e) ? 'done' : ''}" aria-hidden="true"></i>` : ''}</button>`).join('')}</div>`;
+    `<button role="tab" aria-selected="${x.id === active}" class="${x.id === active ? 'on' : ''}" data-action="${action}" data-v="${x.id}">${ICONS[x.id] ? icon(x.id) : ''}${x.label}${e ? `<i class="seg-dot ${secDone(x, e) ? 'done' : ''}" aria-hidden="true"></i>` : ''}</button>`).join('')}</div>`;
 }
 function updateDots() {
   const e = getE();
@@ -132,6 +175,10 @@ function updateDots() {
     const dot = b.querySelector('.seg-dot'), done = secDone(SECTIONS.find(x => x.id === b.dataset.v), e);
     if (dot && dot.classList.contains('done') !== done) { dot.classList.toggle('done', done); if (done) replay(dot, 'pop'); }
   });
+  const n = SECTIONS.filter(x => secDone(x, e)).length;
+  const sum = document.getElementById('sum-count');
+  if (sum) sum.textContent = `${n} von 4 Bereichen erfasst`;
+  if (n === 4 && !celebrated[curDate] && tab === 'today') { celebrated[curDate] = true; celebrate(); }
 }
 // Reiter wechseln: Kapsel gleitet, Inhalt schiebt sich aus der passenden Richtung herein
 function switchTo(id) {
@@ -171,13 +218,60 @@ function onboardingHTML() {
 }
 
 const signed = i => i > 0 ? '+' + i : String(i).replace('-', '−');
-function scaleHTML(key, min, max, val, labels, title) {
-  let h = `<div class="scale${min < 0 ? ' signed' : ''}" role="group" aria-label="${esc(title)}" style="grid-template-columns:repeat(${max - min + 1},minmax(0,1fr))">`;
-  for (let i = min; i <= max; i++) h += `<button data-action="scale" data-k="${key}" data-v="${i}" class="${val === i ? 'on' : ''}" aria-pressed="${val === i}">${min < 0 ? signed(i) : i}</button>`;
-  h += '</div>';
-  if (labels) h += `<div class="scale-lbl"><span>${labels[0]}</span><span>${labels[1]}</span></div>`;
-  return h;
+// Wert lesen/schreiben, auch verschachtelt (z. B. „painDay.m“ = Schmerz morgens)
+const getVal = (e, key) => { const [a, b] = key.split('.'); return b ? (e[a] || {})[b] : e[a]; };
+function setVal(key, v) {
+  const [a, b] = key.split('.');
+  if (!b) { patch({ [a]: v }); return; }
+  const obj = { ...(getE()[a] || {}), [b]: v };
+  const vals = Object.values(obj).filter(x => x != null);
+  patch({ [a]: obj, pain: vals.length ? Math.max(...vals) : null }); // Tageswert = höchster Wert des Tages
+  const mx = document.getElementById('daymax');
+  if (mx) mx.textContent = dayMaxText();
 }
+const dayMaxText = () => `Tageswert (höchster): ${getE().pain ?? '–'}`;
+// Schieberegler: ziehen, auf eine Zahl tippen oder mit den Pfeiltasten; nochmal auf dieselbe Zahl tippen = leeren
+function scaleHTML(key, min, max, val, labels, title, tone = '') {
+  const n = max - min + 1, lbl = i => (min < 0 ? signed(i) : String(i));
+  return `<div class="sl ${tone} ${val == null ? 'empty' : ''}" data-k="${key}" data-min="${min}" data-max="${max}" role="slider" tabindex="0"
+    aria-label="${esc(title)}" aria-valuemin="${min}" aria-valuemax="${max}" ${val != null ? `aria-valuenow="${val}" aria-valuetext="${lbl(val)}"` : 'aria-valuetext="nicht bewertet"'}
+    style="--p:${val == null ? 0 : (val - min) / (max - min) * 100}">
+    <span class="sl-hint">Antippen oder ziehen</span>
+    <div class="sl-track"><i class="sl-fill"></i><b class="sl-thumb"><span>${val == null ? '' : lbl(val)}</span></b></div>
+    <div class="sl-ticks" style="--n:${n}">${Array.from({ length: n }, (_, k) => min + k).map(i =>
+      `<button type="button" tabindex="-1" data-action="scale" data-k="${key}" data-v="${i}" style="--x:${(i - min) / (max - min) * 100}" class="${val === i ? 'on' : ''}" aria-label="${esc(title)}: ${lbl(i)}">${lbl(i)}</button>`).join('')}</div>
+  </div>${labels ? `<div class="scale-lbl"><span>${labels[0]}</span><span>${labels[1]}</span></div>` : ''}`;
+}
+function updateSlider(sl, val) {
+  const min = +sl.dataset.min, max = +sl.dataset.max, lbl = i => (min < 0 ? signed(i) : String(i));
+  sl.classList.toggle('empty', val == null);
+  sl.style.setProperty('--p', val == null ? 0 : (val - min) / (max - min) * 100);
+  sl.querySelector('.sl-thumb span').textContent = val == null ? '' : lbl(val);
+  if (val == null) { sl.removeAttribute('aria-valuenow'); sl.setAttribute('aria-valuetext', 'nicht bewertet'); }
+  else { sl.setAttribute('aria-valuenow', val); sl.setAttribute('aria-valuetext', lbl(val)); }
+  sl.querySelectorAll('.sl-ticks button').forEach(b => b.classList.toggle('on', +b.dataset.v === val));
+}
+const chipsOne = (key, labels, val) => `<div class="chips">${labels.map((l, i) => `<button class="chip ${val === i ? 'on' : ''}" aria-pressed="${val === i}" data-action="scale" data-k="${key}" data-v="${i}">${esc(l)}</button>`).join('')}</div>`;
+const litres = n => String(n * 0.25).replace('.', ',');
+const waterHTML = n => {
+  n = n ?? 0;
+  return `<div class="water"><div class="stepper"><button type="button" data-action="water" data-d="-1" aria-label="Ein Glas weniger">−</button>
+    <output aria-live="polite">${n} ${n === 1 ? 'Glas' : 'Gläser'}<small>≈ ${litres(n)} l</small></output>
+    <button type="button" data-action="water" data-d="1" aria-label="Ein Glas mehr">+</button></div>
+    <div class="glasses" aria-hidden="true">${Array.from({ length: Math.max(8, n) }, (_, i) => `<i class="${i < n ? 'full' : ''}"></i>`).join('')}</div></div>`;
+};
+function frequentMeals() {
+  const c = new Map();
+  Object.values(entries).forEach(e => (e.meals || []).forEach(m => {
+    const t = (m.text || '').trim();
+    if (t.length < 2) return;
+    const o = c.get(t.toLowerCase()) || { t, n: 0 };
+    o.n++; c.set(t.toLowerCase(), o);
+  }));
+  return [...c.values()].sort((a, b) => b.n - a.n).slice(0, 40).map(o => o.t);
+}
+const greeting = () => { const h = new Date().getHours(); return h < 5 ? 'Gute Nacht' : h < 11 ? 'Guten Morgen' : h < 17 ? 'Guten Tag' : h < 22 ? 'Guten Abend' : 'Gute Nacht'; };
+const fmtHead = s => new Date(s + 'T00:00:00Z').toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 const multiChips = (key, opts, sel = []) => `<div class="chips">${opts.map(o => `<button class="chip ${sel.includes(o) ? 'on' : ''}" aria-pressed="${sel.includes(o)}" data-action="toggle" data-k="${key}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
 
 function bannersHTML() {
@@ -189,6 +283,11 @@ function bannersHTML() {
   if (ph && ph.kind === 'over')
     out.push(`<div class="insight"><b>${ph.day === 1 ? (settings.pauseDays ? 'Heute neuen Ring einsetzen.' : 'Heute Ring wechseln.') : `Ringwechsel seit ${ph.day - 1} Tag(en) überfällig.`}</b><br>
       <button class="btn small" data-action="newring" data-due="1">Neuen Ring eingesetzt</button></div>`);
+  if (doctor.date && doctor.date >= todayStr() && dayNum(doctor.date) - dayNum(todayStr()) <= 1) {
+    const open = doctor.questions.filter(q => !q.done).length;
+    out.push(`<div class="insight"><b>${doctor.date === todayStr() ? 'Heute' : 'Morgen'} ist dein Arzttermin.</b> ${open ? `${open} offene ${open === 1 ? 'Frage' : 'Fragen'}.` : ''} Den Bericht findest du unter „Auswertung“.
+      <br><button class="btn ghost small" data-action="gotab" data-v="settings">Fragen ansehen</button></div>`);
+  }
   const logged = Object.values(entries).filter(hasData).length;
   const last = store.get(KEYS.backup, null);
   if (logged >= 14 && (!last || dayNum(todayStr()) - dayNum(last) > 30))
@@ -208,18 +307,24 @@ function todayHTML() {
         : ph.day === 1 ? (p ? 'Heute kommt der neue Ring' : 'Heute ist Wechseltag') : `${ph.day - 1} Tag(e) über dem Wechseltermin`;
     const pct = ph.kind === 'ring' ? ph.day / w * 100 : ph.kind === 'pause' ? ph.day / p * 100 : 100;
     const badge = ph.kind === 'over' ? (ph.day === 1 ? '↻' : '!') : ph.day;
-    const badgeCls = ph.kind === 'over' && ph.day === 1 ? 'pause' : ph.kind;
-    status = `<div class="status"><div class="badge ${badgeCls}">${badge}</div>
-      <div style="flex:1"><b>${phaseLabel(ph)}</b><div class="muted">${sub}</div><div class="muted">Tagebuch-Tag ${diaryDay(curDate)} · Ring ${ph.cycle}</div></div></div>
-      <div class="progress"><i style="width:${Math.min(100, pct)}%"></i></div>
-      ${isToday && ph.kind !== 'over' && !settings.inserts.includes(todayStr()) ? '<p style="margin-top:10px"><button class="btn ghost small" data-action="newring">Ring heute gewechselt</button></p>' : ''}`;
+    const cls = ph.kind === 'over' && ph.day === 1 ? 'pause' : ph.kind;
+    status = `<div class="status"><div class="ringprog ${cls}"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="rpg" x1="1" y1=".5" x2="0" y2=".5"><stop offset="0" stop-color="#f797ad"/><stop offset=".5" stop-color="#f7c3a4"/><stop offset="1" stop-color="#bfe96a"/></linearGradient></defs>
+        <circle class="rp-bg" cx="32" cy="32" r="27"/><circle class="rp-fg" cx="32" cy="32" r="27" pathLength="100" stroke="url(#rpg)" style="--to:${100 - Math.min(100, pct)}"/></svg><b>${badge}</b></div>
+      <div class="info"><b>${phaseLabel(ph)}</b><div class="muted">${sub}</div><div class="muted">Tagebuch-Tag ${diaryDay(curDate)} · Ring ${ph.cycle}</div></div></div>
+      ${isToday && ph.kind !== 'over' && !settings.inserts.includes(todayStr()) ? '<p style="margin:10px 0 0"><button class="btn ghost small" data-action="newring">Ring heute gewechselt</button></p>' : ''}`;
   }
+  const done = SECTIONS.filter(x => secDone(x, e)).length;
+  if (done === 4) celebrated[curDate] = true;
+  const where = !ph ? '' : ph.kind === 'ring' ? `Ring-Tag ${ph.day} · ` : `${phaseLabel(ph)} · `;
   return `
-  <div class="row between"><button class="btn ghost small round" data-action="day" data-d="-1" aria-label="Vortag">‹</button>
-    <h1 style="margin:0;font-size:1.2rem;text-align:center">${isToday ? 'Heute · ' : ''}${fmtDate(curDate)}</h1>
-    <button class="btn ghost small round" data-action="day" data-d="1" aria-label="Folgetag" ${isToday ? 'disabled' : ''}>›</button></div>
-  ${!isToday ? '<p class="muted" style="text-align:center">Nachtrag für einen vergangenen Tag · <a href="#" data-action="gotoday">zu heute</a></p>' : ''}
-  ${isToday ? `<div style="margin-top:12px">${bannersHTML()}</div>` : ''}
+  <div class="today-head"><div>
+      <p class="greet">${isToday ? greeting() : 'Nachtrag'}</p>
+      <h1 class="large" data-short="${isToday ? 'Heute' : esc(fmtDate(curDate))}">${fmtHead(curDate)}</h1>
+      <p class="muted summary">${where}<span id="sum-count">${done} von 4 Bereichen erfasst</span></p></div>
+    <div class="day-nav"><button class="btn ghost small round" data-action="day" data-d="-1" aria-label="Vortag">‹</button>
+      <button class="btn ghost small round" data-action="day" data-d="1" aria-label="Folgetag" ${isToday ? 'disabled' : ''}>›</button></div></div>
+  ${!isToday ? '<p class="muted">Nachtrag für einen vergangenen Tag · <a href="#" data-action="gotoday">zu heute</a></p>' : ''}
+  ${isToday ? `<div>${bannersHTML()}</div>` : ''}
   <div class="card status-card">${status}</div>
   ${segHTML(SECTIONS, section, 'section', e)}
   <div id="pane" class="pane">${paneHTML()}</div>`;
@@ -230,30 +335,41 @@ function paneHTML() {
   const i = SECTIONS.findIndex(x => x.id === section);
   const prev = SECTIONS[i - 1], next = SECTIONS[i + 1];
   const meals = e.meals || [];
+  const yMeals = (entries[addDays(curDate, -1)]?.meals || []).filter(m => filled(m.text));
   const body = {
     sym: () => `<h2 class="sec-title">Endometriose-Symptome</h2>
-    <h3>Schmerzen</h3>${scaleHTML('pain', 0, 10, e.pain, ['keine', 'unerträglich'], 'Schmerzen')}
+    ${mod('daytime') ? `<h3>Schmerzen nach Tageszeit</h3>${DAYTIMES.map(([k, l, lo]) => `<p class="daytime-lbl">${l}</p>${scaleHTML('painDay.' + k, 0, 10, (e.painDay || {})[k], null, `Schmerzen ${lo}`)}`).join('')}
+      <div class="scale-lbl"><span>keine</span><span>unerträglich</span></div><p class="daymax" id="daymax">${dayMaxText()}</p>`
+    : `<h3>Schmerzen</h3>${scaleHTML('pain', 0, 10, e.pain, ['keine', 'unerträglich'], 'Schmerzen')}`}
     <h3>Wo?</h3>${multiChips('painAreas', PAIN_AREAS, e.painAreas)}
     <h3>Krämpfe</h3>${scaleHTML('cramps', 0, 10, e.cramps, ['keine', 'sehr stark'], 'Krämpfe')}
     <h3>Durchfall</h3><div class="chips">${DIARRHEA.map((l, i) => `<button class="chip ${e.diarrhea === i ? 'on' : ''}" aria-pressed="${e.diarrhea === i}" data-action="scale" data-k="diarrhea" data-v="${i}">${l}</button>`).join('')}</div>
     <h3>Blutung</h3><div class="chips">${BLEEDING.map(([k, l]) => `<button class="chip ${e.bleeding === k ? 'on' : ''}" aria-pressed="${e.bleeding === k}" data-action="bleed" data-k="bleeding" data-v="${k}">${l}</button>`).join('')}</div>
+    ${mod('extraSym') ? `<h3>Weitere Beschwerden</h3>${multiChips('symptoms', EXTRA_SYM, e.symptoms)}` : ''}
     <h3>Freitext</h3><textarea data-f="symNote" placeholder="Wie fühlte es sich an? Stechend, ziehend, brennend … Wann und wobei? Was war anders als sonst?">${esc(e.symNote || '')}</textarea>`,
     food: () => `<h2 class="sec-title">Essenstagebuch</h2>
     <p class="muted">Was gab es, wie viel und wann?</p>
     <div id="meals">${meals.map((m, i) => mealHTML(m, i)).join('')}</div>
-    <button class="btn ghost small" data-action="addmeal">+ Mahlzeit</button>
+    <div class="btn-row"><button class="btn ghost small" data-action="addmeal">+ Mahlzeit</button>
+    ${yMeals.length ? `<button class="btn ghost small" data-action="copyyesterday">Wie gestern (${yMeals.length})</button>` : ''}</div>
+    <datalist id="meal-suggest">${frequentMeals().map(t => `<option value="${esc(t)}">`).join('')}</datalist>
+    ${mod('foodTags') ? `<h3>Merkmale</h3><p class="muted" style="margin-top:-2px">Was war heute im Essen?</p>${multiChips('foodTags', FOOD_TAGS, e.foodTags)}` : ''}
     <h3>Freitext zum Essen</h3><textarea data-f="foodNote" placeholder="Getränke, Zutaten, Beschwerden nach dem Essen …">${esc(e.foodNote || '')}</textarea>`,
     emo: () => `<h2 class="sec-title">Gefühle</h2>
-    <h3>Laune</h3>${scaleHTML('mood', -5, 5, e.mood, ['sehr schlecht', 'sehr gut'], 'Laune von −5 bis +5')}
+    <h3>Laune</h3>${scaleHTML('mood', -5, 5, e.mood, ['sehr schlecht', 'sehr gut'], 'Laune von −5 bis +5', 'mood')}
     <h3>Angst</h3>${scaleHTML('anxiety', 0, 5, e.anxiety, ['keine', 'sehr stark'], 'Angst')}
     <h3>Wut</h3>${scaleHTML('anger', 0, 5, e.anger, ['keine', 'sehr stark'], 'Wut')}
     <h3>Stress</h3>${scaleHTML('stress', 0, 5, e.stress, ['keiner', 'sehr stark'], 'Stress')}
     <h3>Freitext</h3><textarea data-f="note" placeholder="Wie geht es dir heute? Was ist passiert?">${esc(e.note || '')}</textarea>`,
     body: () => `<h2 class="sec-title">Körper &amp; Medikamente</h2>
-    <h3>Schlaf letzte Nacht</h3>${scaleHTML('sleep', 1, 5, e.sleep, ['sehr schlecht', 'sehr gut'], 'Schlaf')}
-    <h3>Energie</h3>${scaleHTML('energy', 1, 5, e.energy, ['erschöpft', 'voller Energie'], 'Energie')}
+    <h3>Schlaf letzte Nacht</h3>${scaleHTML('sleep', 1, 5, e.sleep, ['sehr schlecht', 'sehr gut'], 'Schlaf', 'good')}
+    <h3>Energie</h3>${scaleHTML('energy', 1, 5, e.energy, ['erschöpft', 'voller Energie'], 'Energie', 'good')}
+    ${mod('drinkMove') ? `<h3>Getrunken (Gläser à 250 ml)</h3>${waterHTML(e.water)}<h3>Bewegung</h3>${chipsOne('movement', MOVEMENT, e.movement)}` : ''}
     <h3>Schmerzmittel &amp; Hilfen</h3>${multiChips('meds', MEDS, e.meds)}
-    <input type="text" data-f="medsNote" value="${esc(e.medsNote || '')}" placeholder="Dosis, weitere Medikamente …" style="margin-top:8px" aria-label="Medikamente Notiz">`
+    <input type="text" data-f="medsNote" value="${esc(e.medsNote || '')}" placeholder="Dosis, weitere Medikamente …" style="margin-top:8px" aria-label="Medikamente Notiz">
+    ${mod('medEffect') ? `<div id="med-extra" class="med-extra" ${hasPainkiller(e) ? '' : 'hidden'}>
+      <h3>Eingenommen um</h3><input type="time" data-f="medTime" value="${esc(e.medTime || '')}" aria-label="Uhrzeit der Einnahme">
+      <h3>Hat es geholfen?</h3>${chipsOne('medEffect', MED_EFFECT, e.medEffect)}</div>` : ''}`
   }[section]();
   return `<div class="card">${body}</div>
   <div class="pane-nav">
@@ -266,7 +382,7 @@ const mealHTML = (m, i) => `<div class="meal" data-meal="${i}">
       <input type="time" data-f="meal-time" value="${esc(m.time)}" aria-label="Uhrzeit">
       <select data-f="meal-amount" aria-label="Menge">${AMOUNTS.map(a => `<option ${m.amount === a ? 'selected' : ''}>${a}</option>`).join('')}</select>
       <button class="btn danger small" data-action="delmeal" data-i="${i}" aria-label="Mahlzeit löschen">✕</button>
-      <input type="text" data-f="meal-text" value="${esc(m.text)}" placeholder="z. B. Haferbrei mit Banane" aria-label="Was gab es?">
+      <input type="text" data-f="meal-text" value="${esc(m.text)}" placeholder="z. B. Haferbrei mit Banane" aria-label="Was gab es?" list="meal-suggest" autocomplete="off">
     </div>`;
 
 function historyHTML() {
@@ -282,14 +398,16 @@ function historyHTML() {
     const future = ds > todayStr();
     const dot = e && isBleed(e) ? '<span class="dot"></span>' : e && isSpot(e) ? '<span class="dot spot"></span>' : '';
     const ins = settings.inserts.includes(ds) ? '<span class="ins">↻</span>' : '';
-    cells += `<button style="--d:${d}" data-action="open" data-d="${ds}" ${future ? 'disabled' : ''} class="${ds === todayStr() ? 'today' : ''} ${ph && ph.kind === 'pause' ? 'pausebg' : ''} ${hasData(e) ? 'logged' : ''}">${d}${ins}${dot}</button>`;
+    const heat = e && e.pain != null ? e.pain : 0;
+    cells += `<button style="--d:${d};--heat:${heat}" data-action="open" data-d="${ds}" ${future ? 'disabled' : ''} aria-label="${fmtDate(ds)}${e && e.pain != null ? `, Schmerzen ${e.pain}` : ''}"
+      class="${ds === todayStr() ? 'today' : ''} ${ph && ph.kind === 'pause' ? 'pausebg' : ''} ${hasData(e) ? 'logged' : ''} ${heat >= 6 ? 'hot' : ''}">${d}${ins}${dot}</button>`;
   }
   const label = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('de-DE', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-  return `<h1>Verlauf</h1>
+  return `<h1 class="large">Verlauf</h1>
   <div class="card">
   <div class="row between" style="margin-bottom:10px"><button class="btn ghost small" data-action="month" data-d="-1" aria-label="Voriger Monat">‹</button><b>${label}</b><button class="btn ghost small" data-action="month" data-d="1" aria-label="Nächster Monat">›</button></div>
   <div class="cal">${cells}</div>
-  <div class="legend"><span style="color:var(--blood)">● Blutung</span><span style="color:var(--blood)">○ Schmierblutung</span><span style="color:var(--accent)">↻ Ringwechsel</span>${settings.pauseDays ? '<span style="color:var(--ok)">▮ Ringpause</span>' : ''}<span><b>Fett</b> = erfasst</span></div>
+  <div class="legend"><span style="color:var(--blood)">● Blutung</span><span style="color:var(--blood)">○ Schmierblutung</span><span style="color:var(--accent)">↻ Ringwechsel</span>${settings.pauseDays ? '<span style="color:var(--ok)">▮ Ringpause</span>' : ''}<span>Schmerz 0<i class="heat-scale"></i>10</span><span><b>Fett</b> = erfasst</span></div>
   </div>
   <p class="muted">Tippe auf einen Tag, um ihn anzusehen oder nachzutragen.</p>`;
 }
@@ -322,6 +440,20 @@ function groupStats(rows) {
   };
 }
 
+const CHARTS = new Map();
+let chartSeq = 0;
+// weiche Kurve durch die Punkte (Catmull-Rom), ohne über den Rand hinauszuschießen
+function smoothPath(pts, top, bottom) {
+  const cl = v => Math.min(bottom, Math.max(top, v));
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, cl(p1[1] + (p2[1] - p0[1]) / 6)];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, cl(p2[1] - (p3[1] - p1[1]) / 6)];
+    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
 function chartSVG(rows, series, minV, maxV, showBleed) {
   if (rows.length < 2) return '<p class="muted">Für das Diagramm werden mindestens 2 erfasste Tage benötigt.</p>';
   if (!rows.some(r => series.some(sr => r.e[sr.key] != null))) return '<p class="muted">Noch keine Werte erfasst.</p>';
@@ -331,7 +463,9 @@ function chartSVG(rows, series, minV, maxV, showBleed) {
   const x = d => L + (dayNum(d) - d0) / span * (W - L - R);
   const y = v => T + (1 - (v - minV) / (maxV - minV)) * (H - T - B);
   const bw = (W - L - R) / (span + 1);
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Verlauf: ${series.map(sr => sr.label).join(', ')}">`;
+  const id = ++chartSeq;
+  CHARTS.set(id, { W, H, L, R, T, B, d0, span, rows: rows.map(r => ({ d: r.d, e: r.e })), series });
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Verlauf: ${series.map(sr => sr.label).join(', ')}. Antippen zeigt die Werte eines Tages.">`;
   for (let i = d0; i <= d1; i++) {
     const ds = fromNum(i), ph = phaseOf(ds);
     if (ph && ph.kind === 'pause') s += `<rect x="${x(ds) - bw / 2}" y="${T}" width="${bw}" height="${H - T - B}" fill="var(--ok)" opacity=".18"/>`;
@@ -339,16 +473,47 @@ function chartSVG(rows, series, minV, maxV, showBleed) {
   }
   [minV, (minV + maxV) / 2, maxV].forEach(v => s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="4" y="${y(v) + 3}">${v}</text>`);
   series.forEach(sr => {
-    const pts = rows.filter(r => r.e[sr.key] != null);
+    const pts = rows.filter(r => r.e[sr.key] != null).map(r => [x(r.d), y(r.e[sr.key])]);
     if (!pts.length) return;
-    s += `<polyline fill="none" stroke="${sr.color}" stroke-width="2" stroke-linejoin="round" ${sr.dash ? 'stroke-dasharray="5 3"' : 'pathLength="1" class="draw"'} points="${pts.map(r => `${x(r.d).toFixed(1)},${y(r.e[sr.key]).toFixed(1)}`).join(' ')}"/>` +
-      pts.map(r => `<circle cx="${x(r.d).toFixed(1)}" cy="${y(r.e[sr.key]).toFixed(1)}" r="2.5" fill="${sr.color}"/>`).join('');
+    if (pts.length > 1) s += `<path fill="none" stroke="${sr.color}" stroke-width="2.4" stroke-linecap="round" ${sr.dash ? 'stroke-dasharray="5 4"' : 'pathLength="1" class="draw"'} d="${smoothPath(pts, T, H - B)}"/>`;
+    s += pts.map(([cx, cy]) => `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="2.2" fill="${sr.color}"/>`).join('');
   });
   if (showBleed) rows.forEach(r => { if (isBleed(r.e) || isSpot(r.e)) s += `<circle cx="${x(r.d).toFixed(1)}" cy="${H - 10}" r="3.5" fill="${isBleed(r.e) ? 'var(--blood)' : 'none'}" stroke="var(--blood)" stroke-width="1.5"/>`; });
   [...new Set([rows[0].d, rows[Math.floor(rows.length / 2)].d, rows[rows.length - 1].d])].forEach(d => s += `<text x="${x(d)}" y="${H - 1}" text-anchor="middle">${fmtShort(d)}</text>`);
-  return s + '</svg><div class="legend">' + series.map(sr => `<span style="color:${sr.color}">${sr.dash ? '╌' : '━'} ${sr.label}</span>`).join('') +
+  return `<div class="chart" data-cid="${id}">${s}</svg><div class="tip" hidden></div></div><div class="legend">` + series.map(sr => `<span style="color:${sr.color}">${sr.dash ? '╌' : '━'} ${sr.label}</span>`).join('') +
     (showBleed ? '<span style="color:var(--blood)">● Blutung ○ Schmier</span>' : '') +
     '<span style="color:var(--accent)">┆ Ringwechsel</span>' + (settings.pauseDays ? '<span style="color:var(--ok)">▮ Ringpause</span>' : '') + '</div>';
+}
+function chartAt(ev) {
+  const ch = ev.target.closest && ev.target.closest('.chart');
+  if (!ch) return false;
+  const c = CHARTS.get(+ch.dataset.cid);
+  if (!c) return false;
+  const svg = ch.querySelector('svg'), r = svg.getBoundingClientRect();
+  const day = Math.round(((ev.clientX - r.left) / r.width * c.W - c.L) / (c.W - c.L - c.R) * c.span) + c.d0;
+  let best = null;
+  c.rows.forEach(row => { const dd = Math.abs(dayNum(row.d) - day); if (!best || dd < best.dd) best = { row, dd }; });
+  if (!best) return false;
+  const xr = c.L + (dayNum(best.row.d) - c.d0) / c.span * (c.W - c.L - c.R);
+  let g = svg.querySelector('.guide');
+  if (!g) { g = document.createElementNS('http://www.w3.org/2000/svg', 'line'); g.setAttribute('class', 'guide'); svg.appendChild(g); }
+  g.setAttribute('x1', xr); g.setAttribute('x2', xr); g.setAttribute('y1', c.T); g.setAttribute('y2', c.H - c.B);
+  const tip = ch.querySelector('.tip');
+  tip.hidden = false;
+  tip.innerHTML = `<b>${fmtDate(best.row.d)}</b>` + c.series.map(sr => {
+    const v = best.row.e[sr.key];
+    return `<span style="color:${sr.color}">${sr.label}: ${v == null ? '–' : sr.key === 'mood' ? signed(v) : v}</span>`;
+  }).join('<br>');
+  const px = xr / c.W * r.width;
+  tip.style.left = `${Math.min(r.width - 70, Math.max(70, px))}px`;
+  return true;
+}
+function hideTips(except) {
+  view.querySelectorAll('.chart').forEach(ch => {
+    if (ch === except) return;
+    const t = ch.querySelector('.tip'); if (t) t.hidden = true;
+    const g = ch.querySelector('.guide'); if (g) g.remove();
+  });
 }
 
 const STOP = new Set(['mit', 'und', 'oder', 'etwas', 'wenig', 'viel', 'ohne', 'dazu', 'eine', 'einen', 'einer', 'eines', 'dem', 'den', 'der', 'die', 'das', 'sowie', 'noch', 'auch', 'kleine', 'kleiner', 'groß', 'heute', 'gestern', 'habe', 'hatte', 'waren', 'wurde', 'sehr', 'dann', 'aber', 'nach', 'nicht', 'ganz', 'dass', 'weil', 'mehr', 'mich', 'mein', 'meine', 'sich', 'war', 'wieder', 'schon', 'immer', 'bisschen', 'einem', 'beim', 'vom', 'zum', 'zur']);
@@ -358,6 +523,7 @@ function foodFeatures(r) {
   const f = new Set(words(meals.map(m => m.text).join(' ') + ' ' + (r.e.foodNote || '')));
   if (meals.some(m => m.time && m.time >= '20:00')) f.add('spätes Essen (ab 20 Uhr)');
   if (meals.some(m => m.amount === 'viel')) f.add('große Portion');
+  (r.e.foodTags || []).forEach(t => f.add('Merkmal ' + t));
   return f;
 }
 
@@ -370,7 +536,7 @@ function correlationNotes(rows) {
   const near = (r, f) => { const nx = byDate[addDays(r.d, 1)]; return f(r) || (!!nx && f(nx)); };
   const out = [];
   const sources = [
-    ['Essen', foodFeatures, r => hasMeals(r.e) || filled(r.e.foodNote)],
+    ['Essen', foodFeatures, r => hasMeals(r.e) || filled(r.e.foodNote) || (r.e.foodTags || []).length > 0],
     ['Tagebuchtext', r => new Set(words(r.e.note)), r => filled(r.e.note)]
   ];
   for (const [name, feats, has] of sources) {
@@ -396,7 +562,9 @@ function correlationNotes(rows) {
     ['starker Angst', 'Angst', 'anxiety', v => v >= 3, 1],
     ['starker Wut', 'Wut', 'anger', v => v >= 3, 1],
     ['schlechtem Schlaf', 'Schlaf', 'sleep', v => v <= 2, 0],
-    ['wenig Energie', 'Energie', 'energy', v => v <= 2, 0]
+    ['wenig Energie', 'Energie', 'energy', v => v <= 2, 0],
+    ['wenig Getrunkenem (unter 5 Gläsern)', 'Trinken', 'water', v => v < 5, 0],
+    ['keiner Bewegung', 'Bewegung', 'movement', v => v === 0, 0]
   ];
   for (const [label, noun, k, isHigh, dir] of factors) {
     const have = rows.filter(r => r.e[k] != null);
@@ -433,7 +601,9 @@ function analysisFull() {
   const p = analysisParts();
   const promptCard = `<div class="card"><h2 style="margin-top:0">Auftrag an die KI</h2><pre class="ai">${esc(aiPrompt())}</pre></div>`;
   const daysCard = `<div class="card"><h2 style="margin-top:0">Tagesdaten</h2><pre class="ai">${esc(aiDays())}</pre></div>`;
-  return p.head + promptCard + (p.enough ? ASECTIONS.map(x => p.parts[x.id]).join('') : p.body) + daysCard + (p.enough ? p.footer : '');
+  const open = doctor.questions.filter(q => !q.done);
+  const qCard = open.length ? `<div class="card"><h2 style="margin-top:0">Fragen für den Arzttermin</h2><ul>${open.map(q => `<li>${esc(q.t)}</li>`).join('')}</ul></div>` : '';
+  return p.head + promptCard + qCard + (p.enough ? ASECTIONS.map(x => p.parts[x.id]).join('') : p.body) + daysCard + (p.enough ? p.footer : '');
 }
 
 // ---------- KI-Auftrag ----------
@@ -456,22 +626,26 @@ SO SIND DIE WERTE ZU LESEN
 - Laune: −5 (sehr schlecht) bis +5 (sehr gut)
 - Angst, Wut, Stress: 0 bis 5 (0 = gar nicht, 5 = sehr stark)
 - Schlaf (letzte Nacht) und Energie: 1 bis 5 (1 = sehr schlecht, 5 = sehr gut)
+- Schmerzen nach Tageszeit (falls erfasst): morgens, mittags, abends; der Tageswert ist der höchste davon
+- Getrunken: Anzahl Gläser à 250 ml
+- Wirkung der Schmerzmittel: gar nicht, etwas, gut, sehr gut
+- „Weitere“ und „Merkmale“: nur was zutraf ist genannt
 - Ring-Tag 1 ist der Tag, an dem ein neuer Ring eingesetzt wurde.
 - „Notiz“ ist ein Freitext, den ich in diesem Bereich selbst geschrieben habe.
 - Fehlt ein Wert, wurde er nicht erfasst. Das bedeutet nicht „0“.
 
 DEINE AUFGABE
 1. Datenlage: Wie vollständig sind die Daten, und wie belastbar sind Aussagen daraus?
-2. Einfluss des NuvaRings: Wie verändern sich die vier Bereiche im Verlauf eines Rings (erste Woche bis zum Wechsel) und rund um den Ringwechsel${p ? ' bzw. die Ringpause' : ''}? Gibt es Durchbruch- oder Schmierblutungen, und wann treten sie auf?
+2. Einfluss des NuvaRings: Wie verändern sich die vier Bereiche im Verlauf eines Rings (erste Woche bis zum Wechsel) und rund um den Ringwechsel${p ? ' bzw. die Ringpause' : ''}? Gibt es Durchbruch- oder Schmierblutungen, und wann treten sie auf? Steht unten ein Vergleich mit dem Vormonat, bewerte auch die Entwicklung.
 3. Die vier Bereiche einzeln:
    - Endometriose-Symptome (Schmerzen, Schmerzorte, Krämpfe, Durchfall, Blutung, Beschreibung im Freitext)
-   - Essen (was, wann, wie viel)
+   - Essen (was, wann, wie viel, Merkmale wie Gluten oder Milchprodukte)
    - Gefühle/Psyche (Laune, Angst, Wut, Stress, Freitext)
-   - Körper (Schlaf, Energie, Schmerzmittel)
+   - Körper (Schlaf, Energie, Trinken, Bewegung, Schmerzmittel und ihre Wirkung)
 4. Wechselwirkungen: Wie beeinflussen sich die Bereiche gegenseitig, in beide Richtungen und auch zeitversetzt? Zum Beispiel Essen → Beschwerden am selben oder nächsten Tag, Schmerz → Laune, Stress → Schmerz, Schlaf → Schmerz und Laune.
 5. Auffällige Tage oder Muster, die du besonders hervorheben würdest.
 6. Zusammenfassung und Fazit: zuerst je ein kurzes Fazit aus Sicht der Gynäkologin, der Ernährungsfachkraft und der Psychologin, dann ein gemeinsames Fazit.
-7. Nächste Schritte: was ich weiter beobachten sollte, welche Ernährungsideen einen Versuch wert sind, was mir psychisch helfen kann, und 3 bis 5 Fragen für meinen nächsten Termin bei der Frauenärztin.
+7. Nächste Schritte: was ich weiter beobachten sollte, welche Ernährungsideen einen Versuch wert sind, was mir psychisch helfen kann, und 3 bis 5 Fragen für meinen nächsten Termin bei der Frauenärztin. Stehen unten schon eigene Fragen, beziehe sie ein und ergänze nur, was fehlt.
 
 WICHTIG
 - Trenne klar zwischen dem, was die Daten zeigen, und Vermutungen. Ein zeitlicher Zusammenhang ist kein Beweis für eine Ursache. Sag, wenn die Datenmenge für eine Aussage nicht reicht.
@@ -486,15 +660,19 @@ function dayText(d, e, ph) {
   if (!hasData(e)) return `${fmtLong(d)} (${ring}): nicht erfasst`;
   const n = (v, max) => v == null ? null : `${v}/${max}`;
   const join = a => a.filter(Boolean).join(', ');
-  const sym = join([e.pain != null && `Schmerzen ${n(e.pain, 10)}${(e.painAreas || []).length ? ` (${e.painAreas.join(', ')})` : ''}`,
+  const pd = e.painDay ? DAYTIMES.filter(([k]) => e.painDay[k] != null).map(([k, , lo]) => `${lo} ${e.painDay[k]}`).join(', ') : '';
+  const sym = join([e.pain != null && `Schmerzen ${n(e.pain, 10)}${pd ? ` (${pd})` : ''}${(e.painAreas || []).length ? `, Ort: ${e.painAreas.join(', ')}` : ''}`,
     e.cramps != null && `Krämpfe ${n(e.cramps, 10)}`, e.diarrhea != null && `Durchfall: ${DIARRHEA[e.diarrhea]}`,
-    e.bleeding && `Blutung: ${Object.fromEntries(BLEEDING)[e.bleeding]}`, filled(e.symNote) && `Notiz: ${e.symNote.trim()}`]);
+    e.bleeding && `Blutung: ${Object.fromEntries(BLEEDING)[e.bleeding]}`, (e.symptoms || []).length && `Weitere: ${e.symptoms.join(', ')}`,
+    filled(e.symNote) && `Notiz: ${e.symNote.trim()}`]);
   const meals = (e.meals || []).filter(m => filled(m.text)).map(m => `${m.time || '?'} ${m.text.trim()} (${m.amount})`).join('; ');
-  const food = join([meals, filled(e.foodNote) && `Notiz: ${e.foodNote.trim()}`]);
+  const food = join([meals, (e.foodTags || []).length && `Merkmale: ${e.foodTags.join(', ')}`, filled(e.foodNote) && `Notiz: ${e.foodNote.trim()}`]);
   const emo = join([e.mood != null && `Laune ${signed(e.mood)}`, e.anxiety != null && `Angst ${n(e.anxiety, 5)}`, e.anger != null && `Wut ${n(e.anger, 5)}`,
     e.stress != null && `Stress ${n(e.stress, 5)}`, filled(e.note) && `Notiz: ${e.note.trim()}`]);
   const body = join([e.sleep != null && `Schlaf ${n(e.sleep, 5)}`, e.energy != null && `Energie ${n(e.energy, 5)}`,
-    ((e.meds || []).length || filled(e.medsNote)) && `Schmerzmittel/Hilfen: ${join([(e.meds || []).join(', '), filled(e.medsNote) && e.medsNote.trim()])}`]);
+    e.water != null && `Getrunken: ${e.water} Gläser (etwa ${litres(e.water)} l)`, e.movement != null && `Bewegung: ${MOVEMENT[e.movement]}`,
+    ((e.meds || []).length || filled(e.medsNote)) && `Schmerzmittel/Hilfen: ${join([(e.meds || []).join(', '), filled(e.medsNote) && e.medsNote.trim(),
+      e.medTime && `eingenommen ${e.medTime}`, e.medEffect != null && `geholfen: ${MED_EFFECT[e.medEffect]}`])}`]);
   parts.push(`${fmtLong(d)} (${ring})`);
   parts.push(`  Symptome: ${sym || 'nicht erfasst'}`);
   parts.push(`  Essen: ${food || 'nicht erfasst'}`);
@@ -531,7 +709,10 @@ function aiText() {
 - Tage mit Schmerzmitteln: ${pct(t.meds, t.n)}`;
     const found = [...p.notes, ...p.links].map(plain);
     if (found.length) txt += '\n\nMUSTER, DIE DIE APP GEFUNDEN HAT (bitte kritisch prüfen)\n' + found.map(x => '- ' + x).join('\n');
+    if (p.cmp) txt += '\n\n' + p.cmp.text;
   }
+  const open = doctor.questions.filter(q => !q.done);
+  if (open.length) txt += '\n\nMEINE OFFENEN FRAGEN AN DIE ÄRZTIN\n' + open.map(q => '- ' + q.t).join('\n');
   return txt + '\n\nTAGESDATEN\n\n' + aiDays();
 }
 async function aiCopy() {
@@ -557,11 +738,45 @@ function periodLabel() {
   if (period === '31') return `die letzten 31 Tage (${fmtLong(addDays(todayStr(), -30))} bis ${fmtLong(todayStr())})`;
   return 'den gesamten Aufzeichnungszeitraum';
 }
+// Vergleich des gewählten Monats mit dem Vormonat (für Überblick und KI-Auftrag)
+function monthCompare() {
+  if (period !== 'month') return null;
+  const [y, m] = pMonth.split('-').map(Number);
+  const prev = new Date(Date.UTC(y, m - 2, 1)).toISOString().slice(0, 7);
+  const rowsOf = ym => Object.keys(entries).filter(d => d.startsWith(ym) && hasData(entries[d])).map(d => ({ d, e: entries[d] }));
+  const a = rowsOf(prev), b = rowsOf(pMonth);
+  if (a.length < 3 || b.length < 3) return null;
+  const A = groupStats(a), B = groupStats(b);
+  const sh = (n, t) => t ? n / t : null;
+  const pc = v => v == null ? '–' : Math.round(v * 100) + ' %';
+  // [Bezeichnung, Vormonat, dieser Monat, besser wenn: −1 kleiner / +1 größer, Format, Schwelle]
+  const rows = [
+    ['Ø Schmerzen', A.pain, B.pain, -1, f1, .5],
+    ['Ø Krämpfe', A.cramps, B.cramps, -1, f1, .5],
+    ['Tage mit Blutung/Schmierblutung', sh(A.bleed + A.spot, A.n), sh(B.bleed + B.spot, B.n), -1, pc, .1],
+    ['Tage mit Durchfall', sh(A.diar, A.n), sh(B.diar, B.n), -1, pc, .1],
+    ['Ø Laune', A.mood, B.mood, 1, fs, .5],
+    ['Ø Stress', A.stress, B.stress, -1, f1, .5],
+    ['Tage mit Schmerzmitteln', sh(A.meds, A.n), sh(B.meds, B.n), -1, pc, .1],
+    ['Erfasste Tage', A.n, B.n, 0, v => String(v), 0]
+  ];
+  const trend = ([, va, vb, dir, , th]) => {
+    if (!dir || va == null || vb == null || Math.abs(vb - va) < th) return ['≈', ''];
+    return (vb - va) * dir > 0 ? ['besser', 'trend-better'] : ['schlechter', 'trend-worse'];
+  };
+  const prevName = monthName(prev), curName = monthName(pMonth);
+  const html = `<div class="card"><h2 style="margin-top:0">Vergleich mit ${esc(prevName)}</h2><div class="table-wrap"><table>
+    <tr><th>&nbsp;</th><th class="num">${esc(prevName.split(' ')[0])}</th><th class="num">${esc(curName.split(' ')[0])}</th><th class="num">Trend</th></tr>
+    ${rows.map(r => { const [t, c] = trend(r); return `<tr><td>${r[0]}</td><td class="num">${r[4](r[1])}</td><td class="num">${r[4](r[2])}</td><td class="num ${c}">${t}</td></tr>`; }).join('')}
+    </table></div></div>`;
+  const text = `VERGLEICH MIT DEM VORMONAT (${prevName} → ${curName})\n` + rows.map(r => `- ${r[0]}: ${r[4](r[1])} → ${r[4](r[2])} (${trend(r)[0]})`).join('\n');
+  return { html, text };
+}
 function analysisData() {
   const rows = loggedDays();
   const periods = [{ id: 'month', label: 'Monat' }, { id: 'ring', label: 'Ring' }, { id: '31', label: '31 Tage' }, { id: 'all', label: 'Gesamt' }];
   const monthNav = period === 'month' ? `<div class="month-nav noprint"><button class="btn ghost small round" data-action="pmonth" data-d="-1" aria-label="Voriger Monat">‹</button><b>${monthName(pMonth)}</b><button class="btn ghost small round" data-action="pmonth" data-d="1" aria-label="Nächster Monat" ${pMonth >= todayStr().slice(0, 7) ? 'disabled' : ''}>›</button></div>` : '';
-  const head1 = `<h1>Auswertung</h1>${segHTML(periods, period, 'period', null, 'static')}${monthNav}`;
+  const head1 = `<h1 class="large">Auswertung</h1>${segHTML(periods, period, 'period', null, 'static')}${monthNav}`;
   if (rows.length < 3) return { head: head1, enough: false, body: `<div class="card"><p>Noch zu wenig Daten für diesen Zeitraum. Sobald ein paar Tage erfasst sind, erscheint hier die Auswertung.</p><p class="muted">Erfasste Tage: ${rows.length}</p></div>` };
   const tot = groupStats(rows);
   const first = rows[0].d, last = rows[rows.length - 1].d;
@@ -603,9 +818,21 @@ function analysisData() {
   rows.forEach(r => new Set(words(r.e.symNote)).forEach(w => symWords[w] = (symWords[w] || 0) + 1));
   const symTop = Object.entries(symWords).filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1]).slice(0, 5);
   if (symTop.length) notes.push(`Häufigste Beschreibungen in den Symptom-Notizen: ${symTop.map(([w, n]) => `„${esc(w)}“ (${n} Tage)`).join(', ')}.`);
+  const extra = topCounts(rows, 'symptoms');
+  if (extra.length) notes.push(`Häufigste weitere Beschwerden: ${extra.slice(0, 4).map(([k, n]) => `${esc(k)} (${n} Tage)`).join(', ')}.`);
+  const eff = {};
+  rows.forEach(r => { if (r.e.medEffect != null) (r.e.meds || []).filter(m => m !== 'Wärmflasche').forEach(m => (eff[m] ||= []).push(r.e.medEffect)); });
+  const effTxt = Object.entries(eff).filter(([, v]) => v.length >= 2).sort((a, b) => b[1].length - a[1].length)
+    .map(([m, v]) => `${esc(m)} half im Schnitt „${MED_EFFECT[Math.round(avg(v))]}“ (${v.length}×)`);
+  if (effTxt.length) notes.push(`Wirkung der Schmerzmittel: ${effTxt.join(', ')}.`);
+  const water = avg(rows.map(r => r.e.water));
+  if (water != null) notes.push(`Im Schnitt ${f1(water)} Gläser Wasser am Tag (etwa ${f1(water / 4)} Liter).`);
+  const mv = rows.filter(r => r.e.movement != null);
+  if (mv.length >= 3) notes.push(`Bewegung an ${mv.filter(r => r.e.movement > 0).length} von ${mv.length} Tagen, an denen du sie eingetragen hast.`);
   const meds = topCounts(rows, 'meds', ['Wärmflasche']);
   if (tot.meds) notes.push(`Schmerzmittel an ${tot.meds} von ${tot.n} Tagen (${pct(tot.meds, tot.n)})${meds.length ? `, am häufigsten ${esc(meds[0][0])}` : ''}.`);
   const links = correlationNotes(rows);
+  const cmp = monthCompare();
 
   const row = (name, g) => `<tr><td>${esc(name)}</td><td class="num">${g.n}</td><td class="num">${f1(g.pain)}</td><td class="num">${f1(g.cramps)}</td><td class="num">${pct(g.diar, g.n)}</td><td class="num">${pct(g.bleed, g.n)}</td><td class="num">${pct(g.spot, g.n)}</td><td class="num">${fs(g.mood)}</td><td class="num">${f1(g.stress)}</td><td class="num">${pct(g.meds, g.n)}</td></tr>`;
   const head = '<tr><th>&nbsp;</th><th class="num">Tage</th><th class="num">Ø Schm.</th><th class="num">Ø Kr.</th><th class="num">Durchf.</th><th class="num">Blut.</th><th class="num">Schmier</th><th class="num">Ø Laune</th><th class="num">Ø Stress</th><th class="num">Schmerzm.</th></tr>';
@@ -622,10 +849,11 @@ function analysisData() {
     <div class="stat"><b>${pct(tot.meds, tot.n)}</b>Tage mit Schmerzmitteln</div>
     <div class="stat"><b>${tot.n}</b>erfasste Tage</div>
   </div></div>
+  ${cmp ? cmp.html : ''}
   ${notes.length ? card('Auffälligkeiten', notes.map(n => `<div class="insight">${n}</div>`).join('')) : ''}`;
   parts.links = `<div class="card"><h2 style="margin-top:0">Zusammenhänge: Essen, Gefühle &amp; Symptome</h2>
     ${links.length ? links.map(n => `<div class="insight">${n}</div>`).join('') : `<p class="muted">${rows.length < 10 ? 'Für Zusammenhänge braucht es etwa 10 erfasste Tage mit Essen und Emotionen.' : 'Bisher sind keine deutlichen Zusammenhänge erkennbar.'}</p>`}
-    <p class="muted">Berücksichtigt werden Essensbeschreibungen, Uhrzeit und Menge der Mahlzeiten, die Freitexte zu Essen und Gefühlen, Emotionen, Schlaf und Energie, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>`;
+    <p class="muted">Berücksichtigt werden Essensbeschreibungen, Uhrzeit, Menge und Merkmale der Mahlzeiten, die Freitexte zu Essen und Gefühlen, Emotionen, Schlaf, Energie, Trinken und Bewegung, jeweils am selben und am Folgetag. Das sind Muster, keine Beweise.</p></div>`;
   parts.charts = `<div class="card"><h2 style="margin-top:0">Symptome im Verlauf</h2>${chartSVG(rows, [{ key: 'pain', label: 'Schmerzen', color: 'var(--accent)' }, { key: 'cramps', label: 'Krämpfe', color: 'var(--warn)', dash: true }], 0, 10, true)}</div>
   <div class="card"><h2 style="margin-top:0">Laune im Verlauf</h2>${chartSVG(rows, [{ key: 'mood', label: 'Laune', color: 'var(--accent)' }], -5, 5, false)}</div>
   <div class="card"><h2 style="margin-top:0">Emotionen im Verlauf</h2>${chartSVG(rows, [{ key: 'stress', label: 'Stress', color: 'var(--accent)' }, { key: 'anxiety', label: 'Angst', color: 'var(--lilac)', dash: true }, { key: 'anger', label: 'Wut', color: 'var(--warn)' }], 0, 5, false)}</div>
@@ -640,7 +868,7 @@ function analysisData() {
     <div class="row wrap"><button class="btn" data-action="report">Bericht teilen</button><button class="btn ghost" data-action="print">Drucken / PDF</button><button class="btn ghost" data-action="csv">CSV</button></div>
     <p class="muted">Bericht und PDF beginnen mit dem KI-Auftrag und enthalten am Ende alle Tagesdaten. So kannst du die Datei auch direkt in eine KI hochladen.</p></div>
   <p class="notice">Diese Auswertung zeigt Muster in den eigenen Aufzeichnungen und ersetzt keine ärztliche Beratung. Für das Gespräch mit der Frauenärztin oder dem Frauenarzt ist sie eine gute Grundlage.</p>`;
-  return { head: `${head1}<p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>`, enough: true, parts, footer, notes, links, tot };
+  return { head: `${head1}<p class="muted">${fmtDate(first)} – ${fmtDate(last)} · ${tot.n} von ${span} Tagen erfasst</p>`, enough: true, parts, footer, notes, links, tot, cmp };
 }
 
 // ---------- Einstellungen ----------
@@ -648,11 +876,15 @@ function settingsHTML() {
   const ins = sortedInserts();
   const ios = /iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone;
   const last = store.get(KEYS.backup, null);
-  return `<h1>Mehr</h1>
+  return `<h1 class="large">Mehr</h1>
   ${ios ? '<div class="card"><h2 style="margin-top:0">Auf dem iPhone installieren</h2><p class="muted">In Safari auf <b>Teilen</b> tippen, dann auf <b>Zum Home-Bildschirm</b>. Nur so bleiben die Daten dauerhaft gespeichert und die App öffnet sich im Vollbild.</p></div>' : ''}
   <div class="card"><h2 style="margin-top:0">Einführung</h2>
     <p class="muted">Alle Funktionen der App, kurz erklärt und animiert.</p>
     <p><button class="btn ghost" data-action="intro">Einführung ansehen</button></p></div>
+  ${doctorHTML()}
+  <div class="card"><h2 style="margin-top:0">Was möchtest du erfassen?</h2>
+    <p class="muted">Alles ist freiwillig. Schalte aus, was du nicht brauchst – bereits Eingetragenes bleibt erhalten.</p>
+    ${MODULES.map(([k, t, desc]) => `<div class="mod"><div><b>${t}</b><span>${desc}</span></div><button type="button" class="switch" role="switch" aria-checked="${mod(k)}" aria-label="${t}" data-action="module" data-v="${k}"></button></div>`).join('')}</div>
   <div class="card"><h2 style="margin-top:0">Erinnerungen</h2>
     <p class="muted">Kalendertermine mit Hinweis landen im iPhone-Kalender und erinnern auch, wenn die App geschlossen ist. Nach dem Tippen erscheint die Kalender-Vorschau: „Alle hinzufügen“ wählen.</p>
     <p><button class="btn" data-action="ics">Ringwechsel: 2× am Tag erinnern</button></p>
@@ -676,6 +908,32 @@ function settingsHTML() {
   <p class="notice" style="text-align:center">Ringtagebuch ${APP_VERSION}</p>`;
 }
 
+function doctorHTML() {
+  return `<div class="card" id="doctor"><h2 style="margin-top:0">Arzttermin</h2>
+    <label for="doc-date">Nächster Termin</label><input type="date" id="doc-date" data-f="docDate" value="${esc(doctor.date)}">
+    <h3>Fragen an die Ärztin</h3>
+    <div id="doc-qs">${qListHTML()}</div>
+    <div class="row" style="margin-top:8px"><input type="text" id="doc-new" placeholder="Neue Frage …" aria-label="Neue Frage" enterkeyhint="done"><button class="btn small" data-action="docadd">Hinzufügen</button></div>
+    <h3>Notizen vom Termin</h3><textarea data-f="docNotes" placeholder="Was hat die Ärztin gesagt?">${esc(doctor.notes)}</textarea>
+    <p class="muted">Offene Fragen stehen auch im KI-Auftrag und im Bericht. Am Tag vorher erinnert dich die App.</p></div>`;
+}
+const qListHTML = () => (doctor.questions.length ? doctor.questions.map(q => `<div class="q ${q.done ? 'done' : ''}" data-q="${q.id}">
+    <input type="checkbox" data-f="docDone" ${q.done ? 'checked' : ''} aria-label="Beantwortet"><span>${esc(q.t)}</span>
+    <button class="btn danger small" data-action="docdel" aria-label="Frage löschen">✕</button>
+    ${q.done ? `<input type="text" class="answer" data-f="docAnswer" value="${esc(q.answer || '')}" placeholder="Antwort der Ärztin …" aria-label="Antwort">` : ''}</div>`).join('')
+  : '<p class="muted">Noch keine Fragen. Sammle hier alles, was dir einfällt.</p>')
+  + (doctor.questions.some(q => q.done) ? '<p><button class="btn ghost small" data-action="docclean">Beantwortete Fragen entfernen</button></p>' : '');
+function addQuestion() {
+  const inp = document.getElementById('doc-new'), t = inp.value.trim();
+  if (!t) return;
+  doctor.questions.push({ id: Date.now().toString(36), t, done: false });
+  saveDoctor(); inp.value = '';
+  const box = document.getElementById('doc-qs');
+  box.innerHTML = qListHTML();
+  const last = box.querySelectorAll('.q'); if (last.length) last[last.length - 1].classList.add('pop');
+  toast('Frage gespeichert ✓');
+}
+
 // ---------- Export ----------
 let CSS_TEXT = '';
 fetch('style.css').then(r => r.text()).then(t => { CSS_TEXT = t; }).catch(() => {});
@@ -692,10 +950,13 @@ async function share(name, text, type) {
 }
 function csv() {
   const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const hdr = ['Datum', 'Tagebuch-Tag', 'Phase', 'Ringtag', 'Schmerzen', 'Schmerzorte', 'Kraempfe', 'Durchfall', 'Blutung', 'Symptome-Notiz', 'Laune', 'Angst', 'Wut', 'Stress', 'Schlaf', 'Energie', 'Schmerzmittel', 'Medikamente-Notiz', 'Essen', 'Essen-Freitext', 'Notiz'];
-  const lines = loggedDays().map(({ d, e, ph }) => [d, diaryDay(d), phaseLabel(ph), ph?.day, e.pain, (e.painAreas || []).join('; '), e.cramps, e.diarrhea != null ? DIARRHEA[e.diarrhea] : '',
-    e.bleeding ? Object.fromEntries(BLEEDING)[e.bleeding] : '', e.symNote, e.mood, e.anxiety, e.anger, e.stress, e.sleep, e.energy, (e.meds || []).join('; '), e.medsNote,
-    (e.meals || []).filter(m => filled(m.text)).map(m => `${m.time} ${m.text} (${m.amount})`).join('; '), e.foodNote, e.note].map(q).join(';'));
+  const hdr = ['Datum', 'Tagebuch-Tag', 'Phase', 'Ringtag', 'Schmerzen', 'Schmerz morgens', 'Schmerz mittags', 'Schmerz abends', 'Schmerzorte', 'Kraempfe', 'Durchfall', 'Blutung', 'Weitere Beschwerden', 'Symptome-Notiz',
+    'Laune', 'Angst', 'Wut', 'Stress', 'Schlaf', 'Energie', 'Glaeser Wasser', 'Bewegung', 'Schmerzmittel', 'Medikamente-Notiz', 'Einnahme Uhrzeit', 'Wirkung', 'Essen', 'Ernaehrungs-Merkmale', 'Essen-Freitext', 'Notiz'];
+  const pd = e => e.painDay || {};
+  const lines = loggedDays().map(({ d, e, ph }) => [d, diaryDay(d), phaseLabel(ph), ph?.day, e.pain, pd(e).m, pd(e).n, pd(e).a, (e.painAreas || []).join('; '), e.cramps, e.diarrhea != null ? DIARRHEA[e.diarrhea] : '',
+    e.bleeding ? Object.fromEntries(BLEEDING)[e.bleeding] : '', (e.symptoms || []).join('; '), e.symNote, e.mood, e.anxiety, e.anger, e.stress, e.sleep, e.energy,
+    e.water, e.movement != null ? MOVEMENT[e.movement] : '', (e.meds || []).join('; '), e.medsNote, e.medTime, e.medEffect != null ? MED_EFFECT[e.medEffect] : '',
+    (e.meals || []).filter(m => filled(m.text)).map(m => `${m.time} ${m.text} (${m.amount})`).join('; '), (e.foodTags || []).join('; '), e.foodNote, e.note].map(q).join(';'));
   share(`ringtagebuch-${todayStr()}.csv`, '﻿' + [hdr.map(q).join(';'), ...lines].join('\r\n'), 'text/csv');
 }
 function report() {
@@ -749,7 +1010,45 @@ view.addEventListener('click', ev => {
       settings = { inserts: [date > todayStr() ? todayStr() : date], wearDays: +$('ob-wear').value, pauseDays: +$('ob-pause').value };
       saveSettings(); curDate = todayStr(); tab = 'today'; render(true); return;
     }
-    case 'scale': { const cur = getE()[d.k]; patch({ [d.k]: cur === +d.v ? null : +d.v }); refreshGroup(el); return; }
+    case 'scale': {
+      const nv = getVal(getE(), d.k) === +d.v ? null : +d.v;
+      setVal(d.k, nv);
+      const sl = el.closest('.sl');
+      if (sl) { updateSlider(sl, nv); updateDots(); } else refreshGroup(el);
+      return;
+    }
+    case 'water': {
+      const n = Math.max(0, Math.min(20, (getE().water ?? 0) + +d.d));
+      patch({ water: n });
+      const w = el.closest('.water'); w.outerHTML = waterHTML(n);
+      if (+d.d > 0) { const g = view.querySelectorAll('.water .glasses i')[n - 1]; if (g) g.classList.add('new'); }
+      updateDots(); return;
+    }
+    case 'copyyesterday': {
+      const y = (entries[addDays(curDate, -1)]?.meals || []).filter(m => filled(m.text)).map(m => ({ ...m }));
+      const meals = [...(getE().meals || []).filter(m => filled(m.text)), ...y];
+      patch({ meals });
+      const box = document.getElementById('meals');
+      box.innerHTML = meals.map((m, i) => mealHTML(m, i)).join('');
+      [...box.children].slice(-y.length).forEach(r => r.classList.add('appear'));
+      toast(`${y.length} ${y.length === 1 ? 'Mahlzeit' : 'Mahlzeiten'} von gestern übernommen`); updateDots(); return;
+    }
+    case 'module': {
+      settings.modules = { ...(settings.modules || {}), [d.v]: !mod(d.v) };
+      saveSettings(); el.setAttribute('aria-checked', mod(d.v)); return;
+    }
+    case 'gotab': {
+      tab = d.v; render(true);
+      if (tab === 'settings') setTimeout(() => document.getElementById('doctor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      return;
+    }
+    case 'docadd': addQuestion(); return;
+    case 'docdel': {
+      const id = el.closest('.q').dataset.q;
+      doctor.questions = doctor.questions.filter(q => q.id !== id); saveDoctor();
+      document.getElementById('doc-qs').innerHTML = qListHTML(); return;
+    }
+    case 'docclean': doctor.questions = doctor.questions.filter(q => !q.done); saveDoctor(); document.getElementById('doc-qs').innerHTML = qListHTML(); return;
     case 'bleed': patch({ bleeding: getE().bleeding === d.v ? null : d.v }); refreshGroup(el); return;
     case 'toggle': {
       const cur = getE()[d.k] || [];
@@ -817,7 +1116,7 @@ view.addEventListener('click', ev => {
     case 'reset':
       if (!confirm('Wirklich ALLE Tagebuchdaten löschen? Das kann nicht rückgängig gemacht werden. Tipp: vorher ein Backup erstellen.')) return;
       Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-      settings = null; entries = {}; render(true); return;
+      settings = null; entries = {}; doctor = { date: '', questions: [], notes: '' }; render(true); return;
   }
   render();
 });
@@ -831,6 +1130,7 @@ function refreshGroup(el) {
     b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
   });
   if (el.classList.contains('on')) replay(el, 'pop');
+  if (k === 'meds') { const mx = document.getElementById('med-extra'); if (mx) mx.hidden = !hasPainkiller(e); }
   updateDots();
 }
 
@@ -845,13 +1145,64 @@ view.addEventListener('touchend', ev => {
   touch = null;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
 }, { passive: true });
+// Schieberegler ziehen; Diagramm antippen zeigt die Werte des Tages
+let drag = null;
+const sliderValue = (sl, tr, x) => {
+  const r = tr.getBoundingClientRect(), min = +sl.dataset.min, max = +sl.dataset.max;
+  return Math.round(min + Math.min(1, Math.max(0, (x - r.left) / r.width)) * (max - min));
+};
+view.addEventListener('pointerdown', ev => {
+  const tr = ev.target.closest('.sl-track');
+  if (tr) {
+    ev.preventDefault();
+    const sl = tr.closest('.sl');
+    drag = { sl, tr, id: ev.pointerId, v: undefined };
+    try { tr.setPointerCapture(ev.pointerId); } catch (e) { /* ohne Erfassung weiter */ }
+    sl.classList.add('dragging');
+    moveDrag(ev);
+    return;
+  }
+  const ch = ev.target.closest('.chart');
+  hideTips(ch);
+  if (ch) chartAt(ev);
+});
+function moveDrag(ev) {
+  const v = sliderValue(drag.sl, drag.tr, ev.clientX);
+  if (v !== drag.v) { drag.v = v; updateSlider(drag.sl, v); }
+}
+view.addEventListener('pointermove', ev => {
+  if (drag && ev.pointerId === drag.id) { moveDrag(ev); return; }
+  if (ev.pointerType === 'mouse' || ev.buttons) chartAt(ev);
+});
+const endDrag = ev => {
+  if (!drag || ev.pointerId !== drag.id) return;
+  const { sl, v } = drag;
+  drag = null; sl.classList.remove('dragging');
+  if (v !== undefined) { setVal(sl.dataset.k, v); updateDots(); }
+};
+view.addEventListener('pointerup', endDrag);
+view.addEventListener('pointercancel', endDrag);
+view.addEventListener('keydown', ev => {
+  if (ev.target.id === 'doc-new' && ev.key === 'Enter') { ev.preventDefault(); addQuestion(); return; }
+  const sl = ev.target.classList && ev.target.classList.contains('sl') ? ev.target : null;
+  if (!sl) return;
+  const min = +sl.dataset.min, max = +sl.dataset.max;
+  let v = getVal(getE(), sl.dataset.k);
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp') v = v == null ? min : Math.min(max, v + 1);
+  else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown') v = v == null ? min : Math.max(min, v - 1);
+  else if (ev.key === 'Delete' || ev.key === 'Backspace') v = null;
+  else return;
+  ev.preventDefault(); setVal(sl.dataset.k, v); updateSlider(sl, v); updateDots();
+});
 // iOS zeigt :active (Knopf gibt nach) nur mit einem touchstart-Empfänger
 document.addEventListener('touchstart', () => {}, { passive: true });
 
 view.addEventListener('input', ev => {
   const el = ev.target, f = el.dataset.f;
   if (!f) return;
-  if (['note', 'foodNote', 'medsNote', 'symNote'].includes(f)) { patch({ [f]: el.value }); updateDots(); return; }
+  if (['note', 'foodNote', 'medsNote', 'symNote', 'medTime'].includes(f)) { patch({ [f]: el.value }); updateDots(); return; }
+  if (f === 'docNotes') { doctor.notes = el.value; saveDoctor(); return; }
+  if (f === 'docAnswer') { const q = doctor.questions.find(x => x.id === el.closest('.q').dataset.q); if (q) { q.answer = el.value; saveDoctor(); } return; }
   const row = el.closest('[data-meal]');
   if (!row) return;
   const i = +row.dataset.meal;
@@ -861,6 +1212,13 @@ view.addEventListener('input', ev => {
 });
 
 view.addEventListener('change', ev => {
+  const f = ev.target.dataset.f;
+  if (f === 'docDate') { doctor.date = ev.target.value; saveDoctor(); toast(ev.target.value ? 'Termin gespeichert ✓' : 'Termin entfernt'); return; }
+  if (f === 'docDone') {
+    const q = doctor.questions.find(x => x.id === ev.target.closest('.q').dataset.q);
+    if (q) { q.done = ev.target.checked; saveDoctor(); document.getElementById('doc-qs').innerHTML = qListHTML(); }
+    return;
+  }
   if (ev.target.id !== 's-import') return;
   const file = ev.target.files[0];
   if (!file) return;
@@ -945,6 +1303,20 @@ async function whatsNew() {
 }
 
 render(true);
+setTimeout(checkUpdate, 1500); // auch beim Start: gibt es auf der DiskStation schon eine neuere Version?
 if (!introSeen()) showIntro(() => whatsNew()); else whatsNew();
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+// Offline-Speicher anmelden; eine fertig geladene neue Version gleich übernehmen lassen
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    const nudge = () => { if (reg.waiting) reg.waiting.postMessage('skipWaiting'); };
+    nudge();
+    // Falls eine neue Version wartet (z. B. weil sie fertig wurde, während die Seite lud): mehrfach anstoßen
+    let tries = 0;
+    const timer = setInterval(() => { nudge(); if (++tries > 20 || (!reg.waiting && !reg.installing)) clearInterval(timer); }, 1000);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      if (w) w.addEventListener('statechange', () => { if (w.state === 'installed') nudge(); });
+    });
+  }).catch(() => {});
+}
 navigator.storage?.persist?.();
