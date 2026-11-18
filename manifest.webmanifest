@@ -1,0 +1,14 @@
+{
+  "name": "Ringtagebuch",
+  "short_name": "Ringtagebuch",
+  "description": "Symptomtagebuch für NuvaRing und Endometriose",
+  "lang": "de",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf5f4",
+  "theme_color": "#b4475f",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
